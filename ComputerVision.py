@@ -7,20 +7,47 @@ import pytesseract
 import time
 import os
 from collections import defaultdict
+import torch
+from torchvision import transforms
+from torchvision import datasets
+from torch.utils.data import DataLoader
+from sklearn.cluster import DBSCAN
+from tqdm import tqdm
+from sklearn.metrics import pairwise_distances
+from candy_vision_train import create_model
+from candy_vision_train import predict_image
 # Configure pytesseract path (update this to your Tesseract installation path)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
 # Game board configuration (adjust based on your screen resolution)
+IMG_SIZE = 64
+BATCH_SIZE = 32
+EPOCHS = 10
+LR = 1e-4
 BOARD_SIZE = 9  # 9x9 grid
-CANDY_TYPES = {
-    0: 'blue',
-    1: 'green',
-    2: 'orange',
-    3: 'purple',
-    4: 'red',
-    5: 'yellow',
-    6: 'chocolate'
-}
+DATASET_DIR = 'candy_dataset'
+MODEL_PATH = 'candy_classifier.pth'
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+# Candy types (adjust these based on your dataset)
+
+# === Transforms ===
+transform = transforms.Compose([
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize([0.5], [0.5])
+])
+
+# === Load Dataset (for class names + optional training) ===
+dataset = datasets.ImageFolder(DATASET_DIR, transform=transform)
+train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+class_names = dataset.classes
+model = create_model(len(class_names))
+if os.path.exists(MODEL_PATH):
+
+    print("✅ Pre-trained model found. Loading...")
+    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+
+model.eval()
 
 def remove_windows_taskbar(image):
     """Remove the standard Windows taskbar from the bottom"""
@@ -88,17 +115,6 @@ def find_green_boundary(image):
     
     return left_bound+5, right_bound-5
 
-def load_templates(template_dir):
-    templates = {}
-    for filename in os.listdir(template_dir):
-        if filename.endswith('.webp'):
-            name = os.path.splitext(filename)[0]
-            path = os.path.join(template_dir, filename)
-            # Load in BGR then convert to RGB
-            img = cv2.imread(path, cv2.IMREAD_COLOR)
-            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            templates[name] = img_rgb
-    return templates
 
 def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2=150):
     """
@@ -188,36 +204,15 @@ def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2
     print("Detected rows (y, left_edge, right_edge, num_cells):")
     print(row_bounds)
     return row_bounds, image_rgb
-def match_cell_with_template_orb(cell_img, templates):
-    orb = cv2.ORB_create()
-    cell_gray = cv2.cvtColor(cell_img, cv2.COLOR_RGB2GRAY)
-    keypoints1, descriptors1 = orb.detectAndCompute(cell_gray, None)
+def predict_cell_class(cell_img):
+    img = Image.fromarray(cell_img)
+    input_tensor = transform(img).unsqueeze(0).to(DEVICE)
 
-    best_match = None
-    best_score = float('-inf')
+    with torch.no_grad():
+        output = model(input_tensor)
+        predicted_idx = torch.argmax(output, dim=1).item()
 
-    for name, template in templates.items():
-        template_resized = cv2.resize(template, (cell_gray.shape[1], cell_gray.shape[0]))
-        template_gray = cv2.cvtColor(template_resized, cv2.COLOR_RGB2GRAY)
-        keypoints2, descriptors2 = orb.detectAndCompute(template_gray, None)
-
-        if descriptors1 is None or descriptors2 is None:
-            continue
-
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(descriptors1, descriptors2)
-
-        if not matches:
-            continue
-
-        matches = sorted(matches, key=lambda x: x.distance)
-        score = -sum([m.distance for m in matches[:10]])  # Lower distance = better match
-
-        if score > best_score:
-            best_score = score
-            best_match = name
-
-    return best_match, best_score
+    return class_names[predicted_idx]
 
 def detect_candies(image, template_dir='templates', debug_dir="debug_cells"):
     """
@@ -232,7 +227,6 @@ def detect_candies(image, template_dir='templates', debug_dir="debug_cells"):
     h, w, _ = image_rgb.shape
     debug_img = image_rgb.copy()
 
-    templates = load_templates(template_dir)
     grid = []
 
     for row_idx, (row_y, left_edge, right_edge, num_cells) in enumerate(row_bounds):
@@ -255,13 +249,10 @@ def detect_candies(image, template_dir='templates', debug_dir="debug_cells"):
                 continue
 
             cell_img = image_rgb[y1:y2, x1:x2]
-            best_match, best_score = match_cell_with_template_orb(cell_img, templates)
-
-            cell_filename = f"{debug_dir}/row{row_idx}_cell{i}_{best_match}_score{best_score:.2f}.png"
-            Image.fromarray(cell_img).save(cell_filename)
-
-            print(f"\nCell [row {row_idx} col {i}]: Best match: {best_match} (score {best_score:.2f})")
-            row_cells.append(best_match if best_match else "empty")
+            predicted = predict_cell_class(cell_img)
+            row_cells.append(predicted)
+            debug_path = os.path.join(debug_dir, f"row{row_idx}_col{i}_{predicted}.png")
+            Image.fromarray(cell_img).save(debug_path)
 
         grid.append(row_cells)
 
@@ -342,7 +333,7 @@ def print_game_state(state):
     
     print("\nBoard Layout:")
     for row in state['board']:
-        print(" ".join([CANDY_TYPES.get(cell, '?').ljust(8) for cell in row]))
+        print(" ".join([class_names.get(cell, '?').ljust(8) for cell in row]))
 
 def capture_and_analyze():
     print("Press ENTER to capture and analyze the screen (or ESC to cancel)")

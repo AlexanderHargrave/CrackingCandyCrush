@@ -12,45 +12,40 @@ IMG_SIZE = 64
 BATCH_SIZE = 32
 EPOCHS = 10
 LR = 1e-4
-DATASET_DIR = 'candy_dataset'
-MODEL_PATH = 'candy_classifier.pth'
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# === Transforms ===
-transform = transforms.Compose([
+# === Image Transform (Used in Training + Prediction) ===
+candy_transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.ToTensor(),
     transforms.Normalize([0.5], [0.5])
 ])
 
-# === Load Dataset (for class names + optional training) ===
-dataset = datasets.ImageFolder(DATASET_DIR, transform=transform)
-train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
-class_names = dataset.classes
-print(f"Classes: {class_names} ({len(class_names)} total)")
-
-# === Build Model ===
 def create_model(num_classes):
+    """Builds a ResNet18 model for classification."""
     model = models.resnet18(weights=None)
     model.fc = nn.Linear(model.fc.in_features, num_classes)
     return model.to(DEVICE)
 
-model = create_model(len(class_names))
+def load_dataset(data_dir):
+    """Loads dataset and returns a DataLoader and class names."""
+    dataset = datasets.ImageFolder(data_dir, transform=candy_transform)
+    loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
+    return loader, dataset.classes
 
-# === Train If Needed ===
-if not os.path.exists(MODEL_PATH):
-    print("⚠️ No pre-trained model found. Training a new one...")
+def train_model(model, dataloader, num_epochs=EPOCHS, lr=LR):
+    """Trains the model."""
     criterion = nn.CrossEntropyLoss()
-    optimizer = optim.Adam(model.parameters(), lr=LR)
+    optimizer = optim.Adam(model.parameters(), lr=lr)
 
-    for epoch in range(EPOCHS):
-        print(f"\nEpoch {epoch + 1}/{EPOCHS}")
+    for epoch in range(num_epochs):
+        print(f"\nEpoch {epoch + 1}/{num_epochs}")
         model.train()
         running_loss = 0.0
         correct = 0
         total = 0
 
-        for images, labels in tqdm(train_loader):
+        for images, labels in tqdm(dataloader):
             images, labels = images.to(DEVICE), labels.to(DEVICE)
 
             optimizer.zero_grad()
@@ -67,28 +62,69 @@ if not os.path.exists(MODEL_PATH):
         acc = 100 * correct / total
         print(f"Loss: {running_loss:.4f} | Accuracy: {acc:.2f}%")
 
-    torch.save(model.state_dict(), MODEL_PATH)
-    print(f"✅ Model saved to {MODEL_PATH}")
-else:
-    print("✅ Pre-trained model found. Loading...")
-    model.load_state_dict(torch.load(MODEL_PATH, map_location=DEVICE))
+    return model
 
-model.eval()
+def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier.pth'):
+    """Loads the model if it exists, or trains and saves it."""
+    dataloader, class_names = load_dataset(data_dir)
+    model = create_model(len(class_names))
 
-# === Prediction Function ===
-def predict_image(img_path, model, class_names):
-    img = Image.open(img_path).convert('RGB')
-    img = transform(img).unsqueeze(0).to(DEVICE)
+    if os.path.exists(model_path):
+        print("✅ Pre-trained model found. Loading...")
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
+    else:
+        print("⚠️ No pre-trained model found. Training a new one...")
+        model = train_model(model, dataloader)
+        torch.save(model.state_dict(), model_path)
+        print(f"✅ Model saved to {model_path}")
+
+    model.eval()
+    return model, class_names
+
+def predict_image(image_path, model, class_names):
+    """Predicts a single image."""
+    img = Image.open(image_path).convert('RGB')
+    img = candy_transform(img).unsqueeze(0).to(DEVICE)
+
     with torch.no_grad():
         outputs = model(img)
         predicted = torch.argmax(outputs, 1).item()
-    return class_names[predicted]
 
-# === Example Usage ===
+    return class_names[predicted]
+import random
+
+def evaluate_model(model, dataset_dir, class_names, sample_size=100):
+    """Evaluates the model on a random sample of images."""
+    dataset = datasets.ImageFolder(dataset_dir, transform=candy_transform)
+
+    all_indices = list(range(len(dataset)))
+    sample_indices = random.sample(all_indices, min(sample_size, len(dataset)))
+    correct = 0
+
+    for idx in sample_indices:
+        img, label = dataset[idx]
+        img = img.unsqueeze(0).to(DEVICE)
+        with torch.no_grad():
+            outputs = model(img)
+            predicted = torch.argmax(outputs, 1).item()
+
+        if predicted == label:
+            correct += 1
+
+    accuracy = 100 * correct / len(sample_indices)
+    print(f"🔍 Accuracy on {len(sample_indices)} random samples: {accuracy:.2f}%")
+    return accuracy
+
+# === Standalone Usage Example ===
 if __name__ == "__main__":
-    test_image = "candy_dataset/frosting4/f07.png"  # Replace with your test image path
-    if os.path.exists(test_image):
-        prediction = predict_image(test_image, model, class_names)
+    DATASET_DIR = 'candy_dataset'
+    MODEL_PATH = 'candy_classifier.pth'
+    TEST_IMAGE = 'candy_dataset/frosting4/f07.png'  # Replace with any test image
+
+    model, class_names = load_or_train_model(DATASET_DIR, MODEL_PATH)
+    evaluate_model(model, DATASET_DIR, class_names)
+    if os.path.exists(TEST_IMAGE):
+        prediction = predict_image(TEST_IMAGE, model, class_names)
         print(f"🧠 Predicted: {prediction}")
     else:
         print("⚠️ Test image not found.")
