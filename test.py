@@ -7,12 +7,13 @@ from sklearn.cluster import DBSCAN
 
 if __name__ == "__main__":
     print("Press SPACE to capture and analyze the screen (or ESC to cancel)")
-    count = 13
+    count = 51
     while True:
         if keyboard.is_pressed('space'):
             screenshot = pyautogui.screenshot()
-            screenshot.save("data/images/board"+str(count)+".png")
-            print("✅ Saved: data/images/board"+str(count)+".png")
+            screenshot.crop((0.3*screenshot.width, 0, 0.7*screenshot.width, screenshot.height))
+            screenshot.save("data/images/train"+str(count)+".png")
+            print("✅ Saved: data/images/train"+str(count)+".png")
             count += 1
         elif keyboard.is_pressed('esc'):
             print("🚫 Exiting...")

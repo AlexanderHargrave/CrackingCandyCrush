@@ -6,7 +6,7 @@ from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
 from PIL import Image
 from tqdm import tqdm
-
+from ultralytics import YOLO
 # === Config ===
 IMG_SIZE = 64
 BATCH_SIZE = 32
@@ -114,17 +114,79 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
     accuracy = 100 * correct / len(sample_indices)
     print(f"🔍 Accuracy on {len(sample_indices)} random samples: {accuracy:.2f}%")
     return accuracy
+def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
+    model = YOLO(yolo_weights)
+    results = model.predict(image_path, imgsz=640)[0]
+    results.show()
+    # Each detection: xyxy, confidence, class
+    detections = []
+    for box in results.boxes:
+        xyxy = box.xyxy[0].cpu().numpy().astype(int)
+        detections.append(xyxy)
+
+    return detections  # List of [x1, y1, x2, y2]
+def classify_candies(image_path, detections, model, class_names):
+    image = Image.open(image_path).convert("RGB")
+    predictions = []
+
+    for box in detections:
+        x1, y1, x2, y2 = box
+        crop = image.crop((x1, y1, x2, y2))
+        crop = candy_transform(crop).unsqueeze(0).to(DEVICE)
+
+        with torch.no_grad():
+            output = model(crop)
+            pred = torch.argmax(output, 1).item()
+            predictions.append((box, class_names[pred]))
+
+    return predictions  # List of tuples: (box, class_name)
+def cluster_detections_by_rows(detections, tolerance=20):
+    """Groups detections into rows by Y-coordinate proximity."""
+    rows = []
+
+    for det in sorted(detections, key=lambda d: (d[0][1] + d[0][3]) / 2):  # sort top to bottom
+        center_y = (det[0][1] + det[0][3]) / 2
+        placed = False
+
+        for row in rows:
+            row_center = sum((box[1] + box[3]) / 2 for box, _ in row) / len(row)
+            if abs(center_y - row_center) < tolerance:
+                row.append(det)
+                placed = True
+                break
+
+        if not placed:
+            rows.append([det])
+
+    # Sort each row left to right
+    for row in rows:
+        row.sort(key=lambda d: (d[0][0] + d[0][2]) / 2)
+
+    return rows  # list of rows, where each row is a list of (box, class)
 
 # === Standalone Usage Example ===
 if __name__ == "__main__":
-    DATASET_DIR = 'candy_dataset'
-    MODEL_PATH = 'candy_classifier.pth'
-    TEST_IMAGE = 'candy_dataset/frosting4/f07.png'  # Replace with any test image
+    screenshot_path = "data/images/val/board41.png"
+    yolo_model_path = "runs/detect/train7/weights/best.pt"
+    candy_model_path = "candy_classifier.pth"
+    data_dir = "candy_dataset"
+    img = Image.open(screenshot_path)
+    cropped = img.crop((0.3*img.width, 0, 0.7*img.width, img.height))
+    resized = cropped.resize((640, 640))
+    resized.save("data/temp/resized_board.png")
+    screenshot_path = "data/temp/resized_board.png"
+    # Load classifier
+    model, class_names = load_or_train_model(data_dir, candy_model_path)
 
-    model, class_names = load_or_train_model(DATASET_DIR, MODEL_PATH)
-    evaluate_model(model, DATASET_DIR, class_names)
-    if os.path.exists(TEST_IMAGE):
-        prediction = predict_image(TEST_IMAGE, model, class_names)
-        print(f"🧠 Predicted: {prediction}")
-    else:
-        print("⚠️ Test image not found.")
+    # Step 1: Detect
+    boxes = detect_candies_yolo(screenshot_path, yolo_model_path)
+
+    # Step 2: Classify
+    classified = classify_candies(screenshot_path, boxes, model, class_names)
+
+    # Step 3 (optional): Grid structure
+    grid = cluster_detections_by_rows(classified)
+
+    # Print or use the grid
+    for i, row in enumerate(grid):
+        print(f"Row {i + 1}: {[label for _, label in row]}")
