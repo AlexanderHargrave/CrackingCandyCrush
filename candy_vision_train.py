@@ -116,15 +116,26 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
     return accuracy
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
-    results = model.predict(image_path, imgsz=640)[0]
+    results = model.predict(image_path, imgsz=640, conf = 0.4)[0]
     results.show()
+    results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
-    detections = []
+    detections_candy = []
+    detections_gap = []
+    detections_loader = []
     for box in results.boxes:
-        xyxy = box.xyxy[0].cpu().numpy().astype(int)
-        detections.append(xyxy)
+        class_id = int(box.cls[0].item())
 
-    return detections  # List of [x1, y1, x2, y2]
+
+        xyxy = box.xyxy[0].cpu().numpy().astype(int)
+        if class_id == 0:
+            detections_candy.append(xyxy)
+        elif class_id == 1:
+            detections_gap.append((xyxy, "gap"))
+        elif class_id == 2:
+            detections_loader.append((xyxy, "loader"))
+
+    return detections_candy, detections_gap, detections_loader  # List of [x1, y1, x2, y2]
 def classify_candies(image_path, detections, model, class_names):
     image = Image.open(image_path).convert("RGB")
     predictions = []
@@ -166,26 +177,25 @@ def cluster_detections_by_rows(detections, tolerance=20):
 
 # === Standalone Usage Example ===
 if __name__ == "__main__":
-    screenshot_path = "data/images/val/board41.png"
-    yolo_model_path = "runs/detect/train7/weights/best.pt"
+    screenshot_path = "data/temp55.png"
+    yolo_model_path = "runs/detect/train4/weights/best.pt"
     candy_model_path = "candy_classifier.pth"
     data_dir = "candy_dataset"
     img = Image.open(screenshot_path)
-    cropped = img.crop((0.3*img.width, 0, 0.7*img.width, img.height))
-    resized = cropped.resize((640, 640))
-    resized.save("data/temp/resized_board.png")
-    screenshot_path = "data/temp/resized_board.png"
+    #resized = cropped.resize((640, 640))
+    img.save("data/temp/board.png")
+    screenshot_path = "data/temp/board.png"
     # Load classifier
     model, class_names = load_or_train_model(data_dir, candy_model_path)
 
     # Step 1: Detect
-    boxes = detect_candies_yolo(screenshot_path, yolo_model_path)
+    candies_box, gap_box, loader_box = detect_candies_yolo(screenshot_path, yolo_model_path)
 
     # Step 2: Classify
-    classified = classify_candies(screenshot_path, boxes, model, class_names)
-
+    classified = classify_candies(screenshot_path, candies_box, model, class_names)
+    combined = classified + gap_box  # Combine candy and gap detections
     # Step 3 (optional): Grid structure
-    grid = cluster_detections_by_rows(classified)
+    grid = cluster_detections_by_rows(combined)
 
     # Print or use the grid
     for i, row in enumerate(grid):

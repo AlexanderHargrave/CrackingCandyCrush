@@ -1,6 +1,5 @@
 path: data  # path to the folder containing images/ and labels/
 train: images/train
 val: images/val
-
-names:
-  0: candy
+nc: 3
+names: ["candy", "gap", "loader"]

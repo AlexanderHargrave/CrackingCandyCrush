@@ -12,8 +12,8 @@ if __name__ == "__main__":
         if keyboard.is_pressed('space'):
             screenshot = pyautogui.screenshot()
             screenshot.crop((0.3*screenshot.width, 0, 0.7*screenshot.width, screenshot.height))
-            screenshot.save("data/images/train"+str(count)+".png")
-            print("✅ Saved: data/images/train"+str(count)+".png")
+            screenshot.save("data//temp"+str(count)+".png")
+            print("✅ Saved: data/temp"+str(count)+".png")
             count += 1
         elif keyboard.is_pressed('esc'):
             print("🚫 Exiting...")
