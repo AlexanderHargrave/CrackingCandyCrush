@@ -7,8 +7,8 @@ from sklearn.cluster import DBSCAN
 from random import randint
 if __name__ == "__main__":
     print("Press SPACE to capture and analyze the screen (or ESC to cancel)")
-    count = 106
-    random = randint(0,4)
+    count = 127
+    random = randint(1,5)
     while True:
         if keyboard.is_pressed('space'):
             if count % 5 == 1:

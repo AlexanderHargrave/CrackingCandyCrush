@@ -1,4 +1,2 @@
-candy
-loeader
 loader
-gap
+candy
