@@ -114,9 +114,9 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
     accuracy = 100 * correct / len(sample_indices)
     print(f"🔍 Accuracy on {len(sample_indices)} random samples: {accuracy:.2f}%")
     return accuracy
-def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
+def detect_candies_yolo(image_path, yolo_weights="runs/detect/train5/weights/best.pt"):
     model = YOLO(yolo_weights)
-    results = model.predict(image_path, imgsz=640, conf = 0.4)[0]
+    results = model.predict(image_path, imgsz=640, conf = 0.5)[0]
     results.show()
     results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
@@ -177,14 +177,11 @@ def cluster_detections_by_rows(detections, tolerance=20):
 
 # === Standalone Usage Example ===
 if __name__ == "__main__":
-    screenshot_path = "data/temp55.png"
-    yolo_model_path = "runs/detect/train4/weights/best.pt"
+
+    yolo_model_path = "runs/detect/train5/weights/best.pt"
     candy_model_path = "candy_classifier.pth"
     data_dir = "candy_dataset"
-    img = Image.open(screenshot_path)
-    #resized = cropped.resize((640, 640))
-    img.save("data/temp/board.png")
-    screenshot_path = "data/temp/board.png"
+    screenshot_path = "data/temp/board134.png"
     # Load classifier
     model, class_names = load_or_train_model(data_dir, candy_model_path)
 
