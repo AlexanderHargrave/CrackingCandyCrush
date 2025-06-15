@@ -16,10 +16,8 @@ from tqdm import tqdm
 from sklearn.metrics import pairwise_distances
 from candy_vision_train import create_model
 from candy_vision_train import predict_image
-# Configure pytesseract path (update this to your Tesseract installation path)
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 
-# Game board configuration (adjust based on your screen resolution)
 IMG_SIZE = 64
 BATCH_SIZE = 32
 EPOCHS = 10
@@ -28,7 +26,6 @@ BOARD_SIZE = 9  # 9x9 grid
 DATASET_DIR = 'candy_dataset'
 MODEL_PATH = 'candy_classifier.pth'
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-# Candy types (adjust these based on your dataset)
 
 # === Transforms ===
 transform = transforms.Compose([
@@ -37,7 +34,7 @@ transform = transforms.Compose([
     transforms.Normalize([0.5], [0.5])
 ])
 
-# === Load Dataset (for class names + optional training) ===
+
 dataset = datasets.ImageFolder(DATASET_DIR, transform=transform)
 train_loader = DataLoader(dataset, batch_size=BATCH_SIZE, shuffle=True)
 class_names = dataset.classes
@@ -59,8 +56,7 @@ def remove_windows_taskbar(image):
         row = img_array[y]
         if np.allclose(row, row[0], atol=10):  # Uniform color detection
             return image.crop((0, 0, image.width, y))
-    
-    # Default removal if not detected
+
     return image.crop((0, 0, image.width, image.height - 40))
 
 def remove_top_white_bar(image):
@@ -83,23 +79,20 @@ def find_green_boundary(image):
     """Find the left and right green boundaries separating game area from background"""
     img_array = np.array(image)
     
-    # More precise green color range for Candy Crush boundaries
-    # These values might need slight adjustment based on actual game colors
+
     lower_green = np.array([0, 100, 0])
     upper_green = np.array([100, 255, 100])
-    # Create a mask for pixels within the green range
+
     green_mask = np.all((img_array >= lower_green) & (img_array <= upper_green), axis=2)
     
     # Find columns that contain green boundary pixels
     green_columns = np.any(green_mask, axis=0)
     
-    # To handle potential noise, we'll look for continuous green sections
-    # Find left boundary (first continuous green section from left)
+
     left_bound = np.argmax(green_columns)
     
-    lower_green = np.array([50, 120, 50])   # Minimum green values (R, G, B)
-    upper_green = np.array([120, 200, 120]) # Maximum green values
-    # Create a mask for pixels within the green range
+    lower_green = np.array([50, 120, 50])   
+    upper_green = np.array([120, 200, 120]) 
     green_mask = np.all((img_array >= lower_green) & (img_array <= upper_green), axis=2)
     green_columns = np.any(green_mask, axis=0)
     # Find right boundary (first continuous green section from right)
@@ -109,37 +102,12 @@ def find_green_boundary(image):
             right_bound = i
             break
     
-    # Alternative approach if the above doesn't work well:
-    # left_bound = np.argmax(green_columns)
-    # right_bound = len(green_columns) - np.argmax(green_columns[::-1]) - 1
     
     return left_bound+5, right_bound-5
 
 
 def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2=150):
-    """
-    Crops the image to roughly the game board area, then uses Canny edge detection
-    to first determine the vertical boundaries (top and bottom) where the board is found.
-    
-    Within this vertical band, for each horizontal candy-sized step, a horizontal line 
-    (located near the center of the row) is examined for a clear vertical edge:
-      - The first edge from the left is taken as left_edge.
-      - The first edge from the right is taken as right_edge.
-      
-    The span between these defines the width of that row, from which the expected number
-    of candy cells (num_cells) is computed.
-    
-    Returns a list of row definitions as tuples:
-      (row_center_y, left_edge, right_edge, num_cells)
-    and the RGB version of the cropped image.
-    """
-    # Crop to roughly the game board and save for debugging.
-    """image = image.crop((
-        image.width // 10 - 20, 
-        image.height // 4 - 50, 
-        int(image.width * 9 / 10) + 20, 
-        int(image.height * 4 / 5) + 100
-    ))"""
+
     image.save("debug_cropped.png")
     candy_width = 67
     candy_height = 74
@@ -155,10 +123,9 @@ def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2
     edges = cv2.Canny(blurred, canny_threshold1, canny_threshold2)
     cv2.imwrite("debug_edges.png", edges)
     
-    # --- Step 1: Determine the overall vertical boundaries of the game board ---
-    # Sum up the edge pixels in each row.
+
     edge_sum = np.sum(edges > 0, axis=1)
-    # Threshold to decide if a row is "edge-rich". Adjust 0.05 as needed.
+
     threshold_edge_count = int(w * 0.05)
     rows_with_edges = np.where(edge_sum > threshold_edge_count)[0]
     
@@ -170,7 +137,6 @@ def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2
         top_boundary = rows_with_edges[0]
         bottom_boundary = rows_with_edges[-1]
     
-    # --- Step 2: Iterate within vertical boundaries to detect each row's horizontal bounds ---
     row_bounds = []
     print(f"Top boundary: {top_boundary}, Bottom boundary: {bottom_boundary}")
     for base_y in range(top_boundary, bottom_boundary, candy_height):
@@ -178,23 +144,19 @@ def detect_game_state_shape_by_edge(image, canny_threshold1=50, canny_threshold2
         if row_y >= h:
             break
 
-        # Extract the horizontal line at the current row.
-        line = edges[row_y, :]  # 1D array (width,)
+        line = edges[row_y, :]  
         left_edge, right_edge = None, None
 
-        # From the left: find the first pixel that is an edge.
         for x in range(0, w // 2):
             if line[x] > 0:
                 left_edge = x
                 break
 
-        # From the right: find the first pixel that is an edge.
         for x in range(w - 1, w // 2, -1):
             if line[x] > 0:
                 right_edge = x
                 break
 
-        # Only accept the row if both edges are found and the span is significant.
         if left_edge is not None and right_edge is not None:
             span = right_edge - left_edge
             if span > candy_width * 2:  # at least two candies wide
@@ -306,13 +268,10 @@ def analyze_game_state(screenshot):
     """Main function to analyze the game state"""
 
     
-    # 3. Detect candies
     candy_grid = detect_candies(screenshot)
-    
-    # 4. Detect requirements
+
     requirements = detect_requirements(screenshot)
     
-    # 5. Detect moves
     moves_left = detect_remaining_moves(screenshot)
     
     return {
