@@ -238,8 +238,8 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
     results = model.predict(image_path, imgsz=640, conf = 0.5)[0]
-    results.show()
-    results.save("data/temp/board_annotated.png")
+    #results.show()
+    #results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
     detections_candy = []
     detections_gap = []
@@ -353,7 +353,7 @@ def auto_expand_dataset_from_yolo(
             candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
             classified = classify_candies(image_path, candies_box, models_list, class_names, update=True)
 # This function goes through all images in data/images/train and data/images/val and data/temp and gets all the objective and loader images, saves them in objectives and loaders folders
-def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loaders"):
+def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader"):
     os.makedirs(objective_dir, exist_ok=True)
     os.makedirs(loader_dir, exist_ok=True)
     yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -395,7 +395,7 @@ if __name__ == "__main__":
     data_dir = "candy_dataset"
     screenshot_path = "data/temp/board45.png"
     sample_eval_size = 3000  
-    """
+    
     # Hyperparameter search space
     model_names = ["efficientnet_b0","efficientnet_b3", "resnet18", "resnet34", "resnet50"]
     num_epochs = 50
@@ -434,7 +434,7 @@ if __name__ == "__main__":
 
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
-    """
+    
     # run multiple times to ensure dataset is expanded
     """
     print(f"Expanding dataset iteration...")
@@ -447,6 +447,6 @@ if __name__ == "__main__":
     print("✅ Dataset expansion completed.")"""
     # run this to get all the objective and loader images
     print("Collecting objective and loader images...")
-    get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loaders")
-    print("✅ Objective and loader images collected.")
+    get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader")
+    print("✅ Objective and loader images collected.")"""
 
