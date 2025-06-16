@@ -17,6 +17,7 @@ from torchvision.models import (
 from collections import Counter
 from torch.utils.data import random_split
 import random
+import matplotlib.pyplot as plt
 # === Config ===
 IMG_SIZE = 64
 BATCH_SIZE = 32
@@ -63,12 +64,7 @@ def get_model(model_name, num_classes):
     else:
         raise ValueError(f"Unknown model name: {model_name}")
     return model
-def create_model(num_classes):
-    """Creates and returns a pre-trained EfficientNet model."""
-    model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
-    model.classifier[1] = nn.Linear(model.classifier[1].in_features, num_classes)
-    
-    return model.to(DEVICE)
+
 
 def load_dataset(data_dir, transform, val_split=0.2):
     """Splits dataset into train and validation loaders."""
@@ -86,13 +82,21 @@ def load_dataset(data_dir, transform, val_split=0.2):
 
     return train_loader, val_loader, full_dataset.classes
 
-def train_model(model, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patience=5):
+def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patience=5):
+    model = get_model(model_name, len(train_loader.dataset.dataset.classes))
+    model.to(DEVICE)
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.Adam(model.parameters(), lr=lr)
 
     best_val_acc = 0.0
     best_model_state = None
     patience_counter = 0
+
+    # For tracking
+    train_accuracies = []
+    val_accuracies = []
+    train_losses = []
+    val_losses = []
 
     for epoch in range(num_epochs):
         print(f"\nEpoch {epoch + 1}/{num_epochs}")
@@ -114,6 +118,8 @@ def train_model(model, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patie
             total += labels.size(0)
 
         train_acc = 100 * correct / total
+        train_losses.append(train_loss)
+        train_accuracies.append(train_acc)
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
 
         # ====== VALIDATION ======
@@ -131,13 +137,15 @@ def train_model(model, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patie
                 total += labels.size(0)
 
         val_acc = 100 * correct / total
+        val_losses.append(val_loss)
+        val_accuracies.append(val_acc)
         print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
 
         # ====== EARLY STOPPING LOGIC ======
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_model_state = model.state_dict()
-            patience_counter = 0  # reset patience if improved
+            patience_counter = 0
         else:
             patience_counter += 1
             print(f"No improvement. Patience: {patience_counter}/{patience}")
@@ -145,25 +153,59 @@ def train_model(model, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patie
                 print("⏹️ Early stopping triggered.")
                 break
 
-    # Load the best model weights before returning
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
+
+    # ====== SAVE TRAINING CURVES ======
+    os.makedirs("graphs", exist_ok=True)
+    epochs_range = range(1, len(train_accuracies) + 1)
+
+    # Accuracy plot
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs_range, train_accuracies, label="Train Accuracy")
+    plt.plot(epochs_range, val_accuracies, label="Val Accuracy")
+    plt.xlabel("Epoch")
+    plt.ylabel("Accuracy (%)")
+    plt.title(f"Accuracy for {model_name} Model on Objective Classification")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    acc_path = os.path.join("graphs", f"{model_name}_accuracy_objective.png")
+    plt.savefig(acc_path)
+    plt.close()
+    print(f"📈 Accuracy graph saved to '{acc_path}'")
+
+    # Loss plot
+    plt.figure(figsize=(8, 5))
+    plt.plot(epochs_range, train_losses, label="Train Loss")
+    plt.plot(epochs_range, val_losses, label="Val Loss")
+    plt.xlabel("Epoch")
+    plt.ylabel("Loss")
+    plt.title(f"Loss for {model_name} Model on Objective Classification")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    loss_path = os.path.join("graphs", f"{model_name}_loss_objective.png")
+    plt.savefig(loss_path)
+    plt.close()
+    print(f"📉 Loss graph saved to '{loss_path}'")
 
     return model
 
 
-def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier.pth', 
-                        num_epochs=EPOCHS, lr=LR):
+def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_efficientnet_b0.pth', 
+                        num_epochs=EPOCHS, lr=LR, model_name="efficientnet_b0"):
     """Loads the model if it exists, or trains and saves it."""
     train_loader, val_loader, class_names = load_dataset(data_dir, candy_train_transform)
-    model = create_model(len(class_names))
+    model = get_model(model_name, len(class_names))
 
     if os.path.exists(model_path):
         print("✅ Pre-trained model found. Loading...")
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     else:
+        print(model_name)
         print("⚠️ No pre-trained model found. Training a new one...")
-        model = train_model(model, train_loader, val_loader, num_epochs=num_epochs, lr=lr)
+        model = train_model(model_name, train_loader, val_loader, num_epochs=num_epochs, lr=lr)
         torch.save(model.state_dict(), model_path)
         print(f"✅ Model saved to {model_path}")
 
@@ -219,7 +261,7 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
     print(f"Detected {len(detections_candy)} candies, {len(detections_gap)} gaps, {len(detections_loader)} loaders, {len(detections_objective)} objectives.")
 
 
-    return detections_candy, detections_gap, detections_loader  # List of [x1, y1, x2, y2]
+    return detections_candy, detections_gap, detections_loader, detections_objective  # List of [x1, y1, x2, y2]
 def classify_candies(image_path, detections, models, class_names, update = False):
     image = Image.open(image_path).convert("RGB")
     predictions = []
@@ -238,7 +280,7 @@ def classify_candies(image_path, detections, models, class_names, update = False
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         predictions.append((box, class_names[modal_pred]))
         if update:
-            target_folder = os.path.join("candy_dataset", class_names[modal_pred])
+            target_folder = os.path.join("objectives", class_names[modal_pred])
             os.makedirs(target_folder, exist_ok=True)
             if len(os.listdir(target_folder)) >= max_per_class:
                 continue
@@ -289,13 +331,11 @@ def auto_expand_dataset_from_yolo(
 
     # === Load class names ===
     _, _, class_names = load_dataset(candy_dataset_path, candy_eval_transform)
-
     # === Load ensemble models ===
     models_list = []
     for model_name in model_names:
         # train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
-        model = get_model(model_name, len(class_names))
-        model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs)
+        model,_ = load_or_train_model(data_dir = candy_dataset_path, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs, model_name=model_name)
         model.to(DEVICE)
         model.eval()
         models_list.append(model)
@@ -310,15 +350,52 @@ def auto_expand_dataset_from_yolo(
                 continue
 
             image_path = os.path.join(dir_path, filename)
-            candies_box, gap_box, loader_box = detect_candies_yolo(image_path, yolo_model_path)
+            candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
             classified = classify_candies(image_path, candies_box, models_list, class_names, update=True)
+# This function goes through all images in data/images/train and data/images/val and data/temp and gets all the objective and loader images, saves them in objectives and loaders folders
+def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loaders"):
+    os.makedirs(objective_dir, exist_ok=True)
+    os.makedirs(loader_dir, exist_ok=True)
+    yolo_model_path = "runs/detect/train7/weights/best.pt"
+    for dir_path in images_dir:
+        if not os.path.exists(dir_path):
+            continue
 
+        for filename in os.listdir(dir_path):
+            if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
+                continue
+
+            image_path = os.path.join(dir_path, filename)
+            candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
+            for box, label in loader_box:
+                x1, y1, x2, y2 = box
+                crop = Image.open(image_path).convert("RGB").crop((x1, y1, x2, y2))
+                save_path = os.path.join(loader_dir, f"{label}_{filename}")
+                if os.path.exists(save_path):
+                    base_name, ext = os.path.splitext(save_path)
+                    count = 1
+                    while os.path.exists(save_path):
+                        save_path = f"{base_name}_{count}{ext}"
+                        count += 1
+                crop.save(save_path)
+            for box, label in objective_box:
+                x1, y1, x2, y2 = box
+                crop = Image.open(image_path).convert("RGB").crop((x1, y1, x2, y2))
+                save_path = os.path.join(objective_dir, f"{label}_{filename}")
+                if os.path.exists(save_path):
+                    base_name, ext = os.path.splitext(save_path)
+                    count = 1
+                    while os.path.exists(save_path):
+                        save_path = f"{base_name}_{count}{ext}"
+                        count += 1
+                crop.save(save_path)
+            
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
     screenshot_path = "data/temp/board45.png"
-    sample_eval_size = 3000  # Evaluation size for performance estimation
-    
+    sample_eval_size = 3000  
+    """
     # Hyperparameter search space
     model_names = ["efficientnet_b0","efficientnet_b3", "resnet18", "resnet34", "resnet50"]
     num_epochs = 50
@@ -329,9 +406,7 @@ if __name__ == "__main__":
     models_list = []
     for model_name in model_names:
         print(f"\n🚀 Testing {model_name.upper()}")
-        # train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
-        model = get_model(model_name, len(class_names))
-        model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs)
+        model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs, model_name=model_name)
         model.to(DEVICE)
         torch.save(model.state_dict(), f"candy_classifier_{model_name}.pth")
         model.eval()
@@ -348,7 +423,7 @@ if __name__ == "__main__":
     print(f"\n🏆 Best Model: {best_config.upper()} | Accuracy: {best_acc:.2f}%")
 
     # Step 1: Detect
-    candies_box, gap_box, loader_box = detect_candies_yolo(screenshot_path, yolo_model_path)
+    candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
 
     # Step 2: Classify
     classified = classify_candies(screenshot_path, candies_box, models_list, class_names, update=True)
@@ -361,7 +436,7 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     """
     # run multiple times to ensure dataset is expanded
-
+    """
     print(f"Expanding dataset iteration...")
     auto_expand_dataset_from_yolo(
         image_dirs=["data/images/train", "data/images/val"],
@@ -370,4 +445,8 @@ if __name__ == "__main__":
         max_per_class=50
     )
     print("✅ Dataset expansion completed.")"""
+    # run this to get all the objective and loader images
+    print("Collecting objective and loader images...")
+    get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loaders")
+    print("✅ Objective and loader images collected.")
 
