@@ -1,6 +1,7 @@
 import os
 import torch
 import torch.nn as nn
+import numpy as np
 import torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
@@ -82,7 +83,7 @@ def load_dataset(data_dir, transform, val_split=0.2):
 
     return train_loader, val_loader, full_dataset.classes
 
-def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patience=5):
+def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, patience=5, target = "candy"):
     model = get_model(model_name, len(train_loader.dataset.dataset.classes))
     model.to(DEVICE)
     criterion = nn.CrossEntropyLoss()
@@ -159,14 +160,19 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     # ====== SAVE TRAINING CURVES ======
     os.makedirs("graphs", exist_ok=True)
     epochs_range = range(1, len(train_accuracies) + 1)
-
+    if target == "candy":
+        classifier = "Candy"
+    elif target == "objective":
+        classifier = "Objective"
+    elif target == "loader":
+        classifier = "Loader"
     # Accuracy plot
     plt.figure(figsize=(8, 5))
     plt.plot(epochs_range, train_accuracies, label="Train Accuracy")
     plt.plot(epochs_range, val_accuracies, label="Val Accuracy")
     plt.xlabel("Epoch")
     plt.ylabel("Accuracy (%)")
-    plt.title(f"Accuracy for {model_name} Model on Objective Classification")
+    plt.title(f"Accuracy for {model_name} Model on {classifier} Classification")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -181,7 +187,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     plt.plot(epochs_range, val_losses, label="Val Loss")
     plt.xlabel("Epoch")
     plt.ylabel("Loss")
-    plt.title(f"Loss for {model_name} Model on Objective Classification")
+    plt.title(f"Loss for {model_name} Model on {classifier} Classification")
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
@@ -194,7 +200,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
 
 
 def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_efficientnet_b0.pth', 
-                        num_epochs=EPOCHS, lr=LR, model_name="efficientnet_b0"):
+                        num_epochs=EPOCHS, lr=LR, model_name="efficientnet_b0", target = "candy"):
     """Loads the model if it exists, or trains and saves it."""
     train_loader, val_loader, class_names = load_dataset(data_dir, candy_train_transform)
     model = get_model(model_name, len(class_names))
@@ -205,7 +211,7 @@ def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_e
     else:
         print(model_name)
         print("⚠️ No pre-trained model found. Training a new one...")
-        model = train_model(model_name, train_loader, val_loader, num_epochs=num_epochs, lr=lr)
+        model = train_model(model_name, train_loader, val_loader, num_epochs=num_epochs, lr=lr, target=target)
         torch.save(model.state_dict(), model_path)
         print(f"✅ Model saved to {model_path}")
 
@@ -238,8 +244,8 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
     results = model.predict(image_path, imgsz=640, conf = 0.5)[0]
-    #results.show()
-    #results.save("data/temp/board_annotated.png")
+    results.show()
+    results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
     detections_candy = []
     detections_gap = []
@@ -251,7 +257,7 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
 
         xyxy = box.xyxy[0].cpu().numpy().astype(int)
         if class_id == 0:
-            detections_candy.append(xyxy)
+            detections_candy.append((xyxy, "candy"))
         elif class_id == 1:
             detections_gap.append((xyxy, "gap"))
         elif class_id == 2:
@@ -266,7 +272,7 @@ def classify_candies(image_path, detections, models, class_names, update = False
     image = Image.open(image_path).convert("RGB")
     predictions = []
     max_per_class = 50  # Limit per class to avoid dataset bloat
-    for box in detections:
+    for box, _ in detections:
         x1, y1, x2, y2 = box
         crop = image.crop((x1, y1, x2, y2))
         crop_transform = candy_eval_transform(crop).unsqueeze(0).to(DEVICE)
@@ -280,7 +286,7 @@ def classify_candies(image_path, detections, models, class_names, update = False
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         predictions.append((box, class_names[modal_pred]))
         if update:
-            target_folder = os.path.join("objectives", class_names[modal_pred])
+            target_folder = os.path.join("candy_dataset", class_names[modal_pred])
             os.makedirs(target_folder, exist_ok=True)
             if len(os.listdir(target_folder)) >= max_per_class:
                 continue
@@ -296,29 +302,125 @@ def classify_candies(image_path, detections, models, class_names, update = False
             
             crop.save(save_path)
     return predictions  # List of tuples: (box, class_name)
-def cluster_detections_by_rows(detections, tolerance=20):
-    """Groups detections into rows by Y-coordinate proximity."""
-    rows = []
+import pytesseract
+def cluster_detections_by_rows(candy_detections, gap_detections, loader_detections, tolerance=40):
+    """
+    Builds a full grid using candy/gap detections, estimates missing tiles as gaps,
+    and assigns loader detections to the grid based on proximity to candies below.
+    """
+    # Combine and normalize
+    all_detections = [(box, label) for box, label in candy_detections + gap_detections]
 
-    for det in sorted(detections, key=lambda d: (d[0][1] + d[0][3]) / 2):  
-        center_y = (det[0][1] + det[0][3]) / 2
-        placed = False
+    if not candy_detections:
+        print("⚠️ No candies detected.")
+        return []
 
-        for row in rows:
-            row_center = sum((box[1] + box[3]) / 2 for box, _ in row) / len(row)
-            if abs(center_y - row_center) < tolerance:
-                row.append(det)
-                placed = True
-                break
+    # === Step 1: Estimate board dimensions from candy positions ===
+    x_coords = [box[0][0] for box in candy_detections]
+    y_coords = [box[0][1] for box in candy_detections]
+    x_coords += [box[0][2] for box in candy_detections]
+    y_coords += [box[0][3] for box in candy_detections]
+    # pring average candy size, both x and y
+    #avg_candy_width = np.mean([box[0][2] - box[0][0] for box in candy_detections])
+    #avg_candy_height = np.mean([box[0][3] - box[0][1] for box in candy_detections])
+    avg_candy_width = 66
+    avg_candy_height = 73
+    min_x, max_x = min(x_coords), max(x_coords)
+    min_y, max_y = min(y_coords), max(y_coords)
 
-        if not placed:
-            rows.append([det])
+    grid_width = max_x - min_x
+    grid_height = max_y - min_y
+    print(f"🗺️ Detected grid dimensions: {grid_width}x{grid_height} pixels")
 
-    # Sort each row left to right
-    for row in rows:
-        row.sort(key=lambda d: (d[0][0] + d[0][2]) / 2)
+    num_cols = round(grid_width / avg_candy_width)
+    num_rows = round(grid_height / avg_candy_height)
 
-    return rows  # list of rows, where each row is a list of (box, class)
+    if num_cols == 0 or num_rows == 0:
+        print("⚠️ Could not infer grid dimensions.")
+        return []
+
+    print(f"📐 Estimated Grid: {num_rows} rows x {num_cols} cols")
+
+    # === Step 2: Build grid shape ===
+    grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
+
+    for row in range(num_rows):
+        for col in range(num_cols):
+            # Estimated center of each cell
+            center_x = int(min_x + (col + 0.5) * avg_candy_width)
+            center_y = int(min_y + (row + 0.5) * avg_candy_height)
+
+            # Find closest detection
+            best_dist = float("inf")
+            best_match = None
+            best_type = None
+
+            for (box, label) in all_detections:
+                x1, y1, x2, y2 = box
+                cx = (x1 + x2) / 2
+                cy = (y1 + y2) / 2
+                dist = np.hypot(cx - center_x, cy - center_y)
+                if dist < best_dist and dist < tolerance:
+                    best_dist = dist
+                    best_match = (box, label)
+                    best_type = label
+
+            # Prioritize candy over gap
+            if best_match and best_type != "gap":
+                grid[row][col] = best_match
+            elif best_match:
+                grid[row][col] = best_match
+            else:
+                # No match found — assume gap
+                grid[row][col] = ([
+                    int(center_x - avg_candy_width / 2),
+                    int(center_y - avg_candy_height / 2),
+                    int(center_x + avg_candy_width / 2),
+                    int(center_y + avg_candy_height / 2)
+                ], "gap")
+
+    # === Step 3: Assign loaders to rows above matching candies ===
+    for loader_box, loader_label in loader_detections:
+        lx1, ly1, lx2, ly2 = loader_box
+        loader_cx = (lx1 + lx2) / 2
+        loader_cy = (ly1 + ly2) / 2
+
+        best_candy_pos = None
+        best_dist = float('inf')
+
+        for row in range(num_rows):
+            for col in range(num_cols):
+                box, label = grid[row][col]
+                if label != "gap":
+                    x1, y1, x2, y2 = box
+                    cx = (x1 + x2) / 2
+                    cy = (y1 + y2) / 2
+                    dy = cy - loader_cy
+                    dx = abs(cx - loader_cx)
+                    if dy > 0 and dy < 100 and dx < 50 and dy + dx < best_dist:
+                        best_dist = dy + dx
+                        best_candy_pos = (row, col, label)
+
+        if best_candy_pos:
+            row, col, candy_label = best_candy_pos
+            loader_type = f"loader of {loader_label}"
+            # Place loader above candy if possible
+            if row > 0:
+                grid[row - 1][col] = (loader_box, loader_type)
+            # If loader above row 0, i want to generate a new row above it, where it will be placed
+            elif row == 0:
+                # Create a new row above
+                new_row = [(loader_box, loader_type) if c == col else (None, "gap") for c in range(num_cols)]
+                grid.insert(0, new_row)
+                num_rows += 1
+                # Shift existing rows down
+                #for r in range(1, num_rows):
+                    #grid[r] = grid[r - 1]
+
+    return grid
+
+
+
 def auto_expand_dataset_from_yolo(
     image_dirs=["data/images/train", "data/images/val"],
     yolo_model_path="runs/detect/train7/weights/best.pt",
@@ -393,49 +495,87 @@ def get_objective_loader_images(images_dir=["data/temp","data/images/train", "da
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/temp/board45.png"
-    sample_eval_size = 3000  
-    
-    # Hyperparameter search space
-    model_names = ["efficientnet_b0","efficientnet_b3", "resnet18", "resnet34", "resnet50"]
+    screenshot_path = "data/images/train/board122.png"
+    sample_eval_size = 1
+
+    model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
+    short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+
     num_epochs = 50
-    _,_, class_names = load_dataset(data_dir, candy_eval_transform)
-    best_model = None
-    best_config = None
-    best_acc = 0
+    _, _, candy_class_names = load_dataset(data_dir, candy_eval_transform)
+
+    # ===== CANDY CLASSIFICATION =====
     models_list = []
     for model_name in model_names:
-        print(f"\n🚀 Testing {model_name.upper()}")
-        model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs, model_name=model_name)
+        print(f"\n🚀 Training {model_name.upper()} for candy classification")
+        model_path = f"candy_classifier_{model_name}.pth"
+        model, _ = load_or_train_model(data_dir, model_path=model_path, num_epochs=num_epochs, model_name=model_name)
         model.to(DEVICE)
-        torch.save(model.state_dict(), f"candy_classifier_{model_name}.pth")
+        #torch.save(model.state_dict(), model_path)
         model.eval()
         models_list.append(model)
-        acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
-        print(f"🔍 Accuracy: {acc:.2f}%")
 
-        if acc > best_acc:
-            best_acc = acc
-            best_model = model
-            best_config = model_name
-        
+        acc = evaluate_model(model, data_dir, candy_class_names, sample_size=sample_eval_size)
+        print(f"🍬 Candy Accuracy: {acc:.2f}%")
 
-    print(f"\n🏆 Best Model: {best_config.upper()} | Accuracy: {best_acc:.2f}%")
+    # ===== OBJECTIVE CLASSIFICATION =====
+    print("\n🎯 Starting objective classification...")
+    _, _, objective_class_names = load_dataset("objectives", candy_eval_transform)
+    objective_models_list = []
+    objective_data_dir = "objectives"
+    for model_name in short_model_names:
+        print(f"\n🚀 Training {model_name.upper()} for objective classification")
+        model_path = f"objective_classifier_{model_name}.pth"
+        model, _ = load_or_train_model(objective_data_dir, model_path=model_path, num_epochs=num_epochs,
+                                       model_name=model_name, target="objective")
+        model.to(DEVICE)
+        #torch.save(model.state_dict(), model_path)
+        model.eval()
+        objective_models_list.append(model)
 
-    # Step 1: Detect
+        acc = evaluate_model(model, objective_data_dir, objective_class_names, sample_size=sample_eval_size)
+        print(f"🎯 Objective Accuracy: {acc:.2f}%")
+
+    # ===== LOADER CLASSIFICATION =====
+    print("\n📦 Starting loader classification...")
+    _, _, loader_class_names = load_dataset("loader", candy_eval_transform)
+    loader_models_list = []
+    loader_data_dir = "loader"
+    for model_name in short_model_names:
+        print(f"\n🚀 Training {model_name.upper()} for loader classification")
+        model_path = f"loader_classifier_{model_name}.pth"
+        model, _ = load_or_train_model(loader_data_dir, model_path=model_path, num_epochs=num_epochs,
+                                       model_name=model_name, target="loader")
+        model.to(DEVICE)
+        #torch.save(model.state_dict(), model_path)
+        model.eval()
+        loader_models_list.append(model)
+
+        acc = evaluate_model(model, loader_data_dir, loader_class_names, sample_size=sample_eval_size)
+        print(f"📦 Loader Accuracy: {acc:.2f}%")
+
+    # ===== DETECTION =====
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
 
-    # Step 2: Classify
-    classified = classify_candies(screenshot_path, candies_box, models_list, class_names, update=True)
-    combined = classified + gap_box  # Combine candy and gap detections
+    # ===== CLASSIFICATION =====
+    candy_classified = classify_candies(screenshot_path, candies_box, models_list, candy_class_names, update=False)
+    gap_classified = []
+    for box, _ in gap_box:
+        gap_classified.append((box, "gap"))
+    objective_classified = classify_candies(screenshot_path, objective_box, objective_models_list, objective_class_names, update=False)
 
-    # Step 3: Optional grid structure
-    grid = cluster_detections_by_rows(combined)
+    loader_classified = classify_candies(screenshot_path, loader_box, loader_models_list, loader_class_names, update=False)
 
+    # Print objectives
+    print("\n🎯 Objectives detected:")
+    for box, label in objective_classified:
+        x1, y1, x2, y2 = box
+        print(f"Objective: {label} at ({x1}, {y1}, {x2}, {y2})")
+    
+    # ===== GRID STRUCTURING =====
+    grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
-    
-    # run multiple times to ensure dataset is expanded
     """
     print(f"Expanding dataset iteration...")
     auto_expand_dataset_from_yolo(
@@ -444,7 +584,7 @@ if __name__ == "__main__":
         candy_dataset_path="candy_dataset",
         max_per_class=50
     )
-    print("✅ Dataset expansion completed.")"""
+    print("✅ Dataset expansion completed.")
     # run this to get all the objective and loader images
     print("Collecting objective and loader images...")
     get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader")
