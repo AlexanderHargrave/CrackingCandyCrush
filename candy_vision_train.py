@@ -196,8 +196,8 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
     results = model.predict(image_path, imgsz=640, conf = 0.5)[0]
-    #results.show()
-    #results.save("data/temp/board_annotated.png")
+    results.show()
+    results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
     detections_candy = []
     detections_gap = []
@@ -317,8 +317,8 @@ if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
     screenshot_path = "data/temp/board45.png"
-    sample_eval_size = 1000  # Evaluation size for performance estimation
-    """
+    sample_eval_size = 3000  # Evaluation size for performance estimation
+    
     # Hyperparameter search space
     model_names = ["efficientnet_b0","efficientnet_b3", "resnet18", "resnet34", "resnet50"]
     num_epochs = 50
@@ -336,16 +336,16 @@ if __name__ == "__main__":
         torch.save(model.state_dict(), f"candy_classifier_{model_name}.pth")
         model.eval()
         models_list.append(model)
-        #acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
-        #print(f"🔍 Accuracy: {acc:.2f}%")
+        acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
+        print(f"🔍 Accuracy: {acc:.2f}%")
 
-        #if acc > best_acc:
-            #best_acc = acc
-            #best_model = model
-            #best_config = model_name
+        if acc > best_acc:
+            best_acc = acc
+            best_model = model
+            best_config = model_name
         
 
-    #print(f"\n🏆 Best Model: {best_config.upper()} | Accuracy: {best_acc:.2f}%")
+    print(f"\n🏆 Best Model: {best_config.upper()} | Accuracy: {best_acc:.2f}%")
 
     # Step 1: Detect
     candies_box, gap_box, loader_box = detect_candies_yolo(screenshot_path, yolo_model_path)
@@ -369,5 +369,5 @@ if __name__ == "__main__":
         candy_dataset_path="candy_dataset",
         max_per_class=50
     )
-    print("✅ Dataset expansion completed.")
+    print("✅ Dataset expansion completed.")"""
 
