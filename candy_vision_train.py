@@ -196,8 +196,8 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
     results = model.predict(image_path, imgsz=640, conf = 0.5)[0]
-    results.show()
-    results.save("data/temp/board_annotated.png")
+    #results.show()
+    #results.save("data/temp/board_annotated.png")
     # Each detection: xyxy, confidence, class
     detections_candy = []
     detections_gap = []
@@ -220,24 +220,39 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
 
 
     return detections_candy, detections_gap, detections_loader  # List of [x1, y1, x2, y2]
-def classify_candies(image_path, detections, models, class_names):
+def classify_candies(image_path, detections, models, class_names, update = False):
     image = Image.open(image_path).convert("RGB")
     predictions = []
-
+    max_per_class = 50  # Limit per class to avoid dataset bloat
     for box in detections:
         x1, y1, x2, y2 = box
         crop = image.crop((x1, y1, x2, y2))
-        crop = candy_eval_transform(crop).unsqueeze(0).to(DEVICE)
+        crop_transform = candy_eval_transform(crop).unsqueeze(0).to(DEVICE)
         model_votes = []
         for model in models:
             model.eval()
             with torch.no_grad():
-                output = model(crop)
+                output = model(crop_transform)
                 pred = torch.argmax(output, 1).item()
                 model_votes.append(pred)
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         predictions.append((box, class_names[modal_pred]))
+        if update:
+            target_folder = os.path.join("candy_dataset", class_names[modal_pred])
+            os.makedirs(target_folder, exist_ok=True)
+            if len(os.listdir(target_folder)) >= max_per_class:
+                continue
+            base_name = f"{class_names[modal_pred]}_{len(os.listdir(target_folder)) + 1}"
+            new_name = f"{base_name}.png"
+            count = 1
+            while os.path.exists(os.path.join(target_folder, new_name)):
+                new_name = f"{base_name}_{count}.png"
+                count += 1
 
+            save_path = os.path.join(target_folder, new_name)
+            # print(f"Saving crop to {save_path}")
+            
+            crop.save(save_path)
     return predictions  # List of tuples: (box, class_name)
 def cluster_detections_by_rows(detections, tolerance=20):
     """Groups detections into rows by Y-coordinate proximity."""
@@ -278,15 +293,12 @@ def auto_expand_dataset_from_yolo(
     # === Load ensemble models ===
     models_list = []
     for model_name in model_names:
-        print(f"\n🚀 Loading model: {model_name.upper()}")
+        # train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
         model = get_model(model_name, len(class_names))
-        model.load_state_dict(torch.load(f"candy_classifier_{model_name}.pth", map_location=DEVICE))
+        model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs)
         model.to(DEVICE)
         model.eval()
         models_list.append(model)
-
-    # === Load YOLO model ===
-    yolo = YOLO(yolo_model_path)
 
     # === Go through each image in provided directories ===
     for dir_path in image_dirs:
@@ -298,52 +310,15 @@ def auto_expand_dataset_from_yolo(
                 continue
 
             image_path = os.path.join(dir_path, filename)
-
-            # Step 1: Detect candies
-            candies_box, _, _ = detect_candies_yolo(image_path, yolo_model_path)
-
-            # Step 2: Classify each candy
-            image = Image.open(image_path).convert("RGB")
-            for box in candies_box:
-                x1, y1, x2, y2 = box
-                crop = image.crop((x1, y1, x2, y2))
-                transformed = candy_eval_transform(crop).unsqueeze(0).to(DEVICE)
-
-                # Ensemble prediction
-                model_votes = []
-                for model in models_list:
-                    with torch.no_grad():
-                        output = model(transformed)
-                        pred = torch.argmax(output, 1).item()
-                        model_votes.append(pred)
-                modal_pred = Counter(model_votes).most_common(1)[0][0]
-                class_name = class_names[modal_pred]
-
-                # Step 3: Save crop if below max_per_class
-                target_folder = os.path.join(candy_dataset_path, class_name)
-                os.makedirs(target_folder, exist_ok=True)
-                if len(os.listdir(target_folder)) >= max_per_class:
-                    continue
-
-                # Generate unique filename
-                base_name = f"{class_name}_{len(os.listdir(target_folder)) + 1}"
-                new_name = f"{base_name}.png"
-                count = 1
-                while os.path.exists(os.path.join(target_folder, new_name)):
-                    new_name = f"{base_name}_{count}.png"
-                    count += 1
-
-                save_path = os.path.join(target_folder, new_name)
-                crop.save(save_path)
-
-            print(f"✅ Processed: {filename}")
+            candies_box, gap_box, loader_box = detect_candies_yolo(image_path, yolo_model_path)
+            classified = classify_candies(image_path, candies_box, models_list, class_names, update=True)
 
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
     screenshot_path = "data/temp/board45.png"
     sample_eval_size = 1000  # Evaluation size for performance estimation
-
+    """
     # Hyperparameter search space
     model_names = ["efficientnet_b0","efficientnet_b3", "resnet18", "resnet34", "resnet50"]
     num_epochs = 50
@@ -354,7 +329,7 @@ if __name__ == "__main__":
     models_list = []
     for model_name in model_names:
         print(f"\n🚀 Testing {model_name.upper()}")
-        train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
+        # train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
         model = get_model(model_name, len(class_names))
         model,_ = load_or_train_model(data_dir, model_path=f"candy_classifier_{model_name}.pth", num_epochs=num_epochs)
         model.to(DEVICE)
@@ -376,7 +351,7 @@ if __name__ == "__main__":
     candies_box, gap_box, loader_box = detect_candies_yolo(screenshot_path, yolo_model_path)
 
     # Step 2: Classify
-    classified = classify_candies(screenshot_path, candies_box, models_list, class_names)
+    classified = classify_candies(screenshot_path, candies_box, models_list, class_names, update=True)
     combined = classified + gap_box  # Combine candy and gap detections
 
     # Step 3: Optional grid structure
@@ -387,12 +362,12 @@ if __name__ == "__main__":
     """
     # run multiple times to ensure dataset is expanded
 
-    print(f"Expanding dataset iteration {_ + 1}...")
+    print(f"Expanding dataset iteration...")
     auto_expand_dataset_from_yolo(
         image_dirs=["data/images/train", "data/images/val"],
         yolo_model_path="runs/detect/train7/weights/best.pt",
         candy_dataset_path="candy_dataset",
         max_per_class=50
     )
-    print("✅ Dataset expansion completed.")"""
+    print("✅ Dataset expansion completed.")
 
