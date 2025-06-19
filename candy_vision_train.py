@@ -19,6 +19,11 @@ from collections import Counter
 from torch.utils.data import random_split
 import random
 import matplotlib.pyplot as plt
+import pytesseract
+import cv2
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+import easyocr
+reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
 IMG_SIZE = 64
 BATCH_SIZE = 32
@@ -268,6 +273,35 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
 
 
     return detections_candy, detections_gap, detections_loader, detections_objective  # List of [x1, y1, x2, y2]
+def detect_jelly_level(crop_pil):
+    crop_np = np.array(crop_pil)
+    h, w, _ = crop_np.shape
+    crop_reshaped = crop_np.reshape(-1, 3)
+    # rgb values
+    no_jelly_R, no_jelly_G, no_jelly_B = 100, 100, 150
+    one_layer_R, one_layer_G, one_layer_B = 155, 160, 235
+    two_layer_R, two_layer_G, two_layer_B = 210, 210, 255
+
+    no_jelly_count, one_jelly_count, two_jelly_count = 0, 0, 0
+    for r,g,b in crop_reshaped:
+        if r < no_jelly_R and g < no_jelly_G and b > no_jelly_B - 25 and b < no_jelly_B + 25:
+            no_jelly_count += 1
+        if r > one_layer_R-25 and r < one_layer_R+25 and g > one_layer_G - 25 and g < one_layer_G + 25 and b > one_layer_B-25 and b < one_layer_B + 25:
+            one_jelly_count += 1
+        if r > two_layer_R-25 and r < two_layer_R + 15 and g > two_layer_G - 25 and g < two_layer_G + 15 and b > two_layer_B-15:
+            two_jelly_count += 1
+    print(f"Jelly counts - No Jelly: {no_jelly_count}, One Layer: {one_jelly_count}, Two Layers: {two_jelly_count}")
+    if one_jelly_count > no_jelly_count and one_jelly_count > two_jelly_count and one_jelly_count > 50:
+        return "one layer jelly"
+    elif one_jelly_count > two_jelly_count and one_jelly_count > 100:
+        return "one layer jelly"
+    elif two_jelly_count > no_jelly_count and two_jelly_count > one_jelly_count and two_jelly_count > 50:
+        return "two layer jelly"
+    elif two_jelly_count > 100:
+        return "two layer jelly"
+    else:
+        
+        return "no jelly"
 def classify_candies(image_path, detections, models, class_names, update = False):
     image = Image.open(image_path).convert("RGB")
     predictions = []
@@ -284,7 +318,13 @@ def classify_candies(image_path, detections, models, class_names, update = False
                 pred = torch.argmax(output, 1).item()
                 model_votes.append(pred)
         modal_pred = Counter(model_votes).most_common(1)[0][0]
-        predictions.append((box, class_names[modal_pred]))
+        jelly_levels = detect_jelly_level(crop)
+        result = class_names[modal_pred]
+        if jelly_levels == "one layer jelly":
+            result += "_jelly1"
+        elif jelly_levels == "two layer jelly":
+            result += "_jelly2"
+        predictions.append((box, result))
         if update:
             target_folder = os.path.join("candy_dataset", class_names[modal_pred])
             os.makedirs(target_folder, exist_ok=True)
@@ -301,6 +341,7 @@ def classify_candies(image_path, detections, models, class_names, update = False
             # print(f"Saving crop to {save_path}")
             
             crop.save(save_path)
+    
     return predictions  # List of tuples: (box, class_name)
 import pytesseract
 def cluster_detections_by_rows(candy_detections, gap_detections, loader_detections, tolerance=40):
@@ -455,7 +496,7 @@ def auto_expand_dataset_from_yolo(
             candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
             classified = classify_candies(image_path, candies_box, models_list, class_names, update=True)
 # This function goes through all images in data/images/train and data/images/val and data/temp and gets all the objective and loader images, saves them in objectives and loaders folders
-def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader"):
+def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader", glass_dir="glass_layers"):
     os.makedirs(objective_dir, exist_ok=True)
     os.makedirs(loader_dir, exist_ok=True)
     yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -469,6 +510,7 @@ def get_objective_loader_images(images_dir=["data/temp","data/images/train", "da
 
             image_path = os.path.join(dir_path, filename)
             candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
+            """
             for box, label in loader_box:
                 x1, y1, x2, y2 = box
                 crop = Image.open(image_path).convert("RGB").crop((x1, y1, x2, y2))
@@ -491,87 +533,161 @@ def get_objective_loader_images(images_dir=["data/temp","data/images/train", "da
                         save_path = f"{base_name}_{count}{ext}"
                         count += 1
                 crop.save(save_path)
-            
+            """
+            # glass layers is candy boxes, need all candies
+            for box, label in candies_box:
+                x1, y1, x2, y2 = box
+                crop = Image.open(image_path).convert("RGB").crop((x1, y1, x2, y2))
+                save_path = os.path.join(glass_dir, f"{label}_{filename}")
+                if os.path.exists(save_path):
+                    base_name, ext = os.path.splitext(save_path)
+                    count = 1
+                    while os.path.exists(save_path):
+                        save_path = f"{base_name}_{count}{ext}"
+                        count += 1
+                crop.save(save_path)
+
+# A function to check around 50 to 100 pixels to the right of objective detection and use pytesseract to extrac the number next to each objective
+# This is used to get the objective number from the image
+def detect_moves(image_path):
+    image = Image.open(image_path).convert("RGB")
+    image_np = np.array(image)
+    region = image_np[75:150, image.width//10-20:image.width//10+100]
+    # show the region
+    resized = cv2.resize(region, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
+    _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+    result = reader.readtext(thresh, detail=0, paragraph=False, allowlist='0123456789')
+    if not result:
+        # Attempt with pytesseract if EasyOCR fails
+        result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
+        if not result:
+            return 0
+    print(f"Moves Left: {result}")
+    return 10
+
+
+    
+def get_objective_numbers(image_path, objective_detections):
+    image = Image.open(image_path).convert("RGB")
+    image_np = np.array(image)
+    
+
+    objective_numbers = []
+    
+    for box, label in objective_detections:
+        x1, y1, x2, y2 = box
+        # Define region to the right of the detection
+        if len(objective_detections)<3:
+            region = image_np[y1:y2, x2-2:x2+50]
+        else:
+            # region is below instead of to the right
+            region = image_np[y2-2:y2+50, x1:x2]
+        # show the region
+        # Run EasyOCR on the cropped region
+        resized = cv2.resize(region, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
+        gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
+        _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
+
+        # Use this preprocessed image with EasyOCR
+        result = reader.readtext(thresh, detail=0, paragraph=False, allowlist='0123456789')
+        if not result:
+            # Attempt with pytesseract if EasyOCR fails
+            result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
+            if not result:
+                # return 0 if no result fouund as it maybe a tick instead which means completed so 0
+                result = ['0']
+        print(f"OCR raw output for box {box}: {result}")
+
+        detected_number = None
+        for text in result:
+            cleaned = text.replace('&', '8').strip()
+            digits_only = ''.join(filter(str.isdigit, cleaned))
+            if digits_only:
+                detected_number = digits_only
+                break  # Take the first valid number found
+
+        if detected_number:
+            objective_numbers.append((box, detected_number))
+
+    return objective_numbers
+def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=None, sample_eval_size=1):
+    print(f"\n🧠 Loading models for {task_name} classification...")
+    _, _, class_names = load_dataset(data_dir, candy_eval_transform)
+    models_list = []
+
+    for model_name in model_names:
+        print(f"\n🚀 Training {model_name.upper()} for {task_name} classification")
+        model_path = f"{task_name}_classifier_{model_name}.pth"
+        model, _ = load_or_train_model(data_dir, model_path=model_path, num_epochs=num_epochs,
+                                       model_name=model_name, target=target)
+        model.to(DEVICE)
+        # torch.save(model.state_dict(), model_path)
+        model.eval()
+        models_list.append(model)
+
+        acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
+        print(f"{task_name.title()} Accuracy: {acc:.2f}%")
+
+    return models_list, class_names
+
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/images/train/board122.png"
+    screenshot_path = "data/temp/board125.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
     short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
 
     num_epochs = 50
-    _, _, candy_class_names = load_dataset(data_dir, candy_eval_transform)
 
     # ===== CANDY CLASSIFICATION =====
-    models_list = []
-    for model_name in model_names:
-        print(f"\n🚀 Training {model_name.upper()} for candy classification")
-        model_path = f"candy_classifier_{model_name}.pth"
-        model, _ = load_or_train_model(data_dir, model_path=model_path, num_epochs=num_epochs, model_name=model_name)
-        model.to(DEVICE)
-        #torch.save(model.state_dict(), model_path)
-        model.eval()
-        models_list.append(model)
-
-        acc = evaluate_model(model, data_dir, candy_class_names, sample_size=sample_eval_size)
-        print(f"🍬 Candy Accuracy: {acc:.2f}%")
+    candy_models, candy_class_names = load_models_for_task(
+        task_name="candy",
+        data_dir="candy_dataset",
+        model_names=model_names,
+        num_epochs=num_epochs,
+        sample_eval_size=sample_eval_size
+    )
 
     # ===== OBJECTIVE CLASSIFICATION =====
-    print("\n🎯 Starting objective classification...")
-    _, _, objective_class_names = load_dataset("objectives", candy_eval_transform)
-    objective_models_list = []
-    objective_data_dir = "objectives"
-    for model_name in short_model_names:
-        print(f"\n🚀 Training {model_name.upper()} for objective classification")
-        model_path = f"objective_classifier_{model_name}.pth"
-        model, _ = load_or_train_model(objective_data_dir, model_path=model_path, num_epochs=num_epochs,
-                                       model_name=model_name, target="objective")
-        model.to(DEVICE)
-        #torch.save(model.state_dict(), model_path)
-        model.eval()
-        objective_models_list.append(model)
-
-        acc = evaluate_model(model, objective_data_dir, objective_class_names, sample_size=sample_eval_size)
-        print(f"🎯 Objective Accuracy: {acc:.2f}%")
+    objective_models, objective_class_names = load_models_for_task(
+        task_name="objective",
+        data_dir="objectives",
+        model_names=short_model_names,
+        num_epochs=num_epochs,
+        target="objective",
+        sample_eval_size=sample_eval_size
+    )
 
     # ===== LOADER CLASSIFICATION =====
-    print("\n📦 Starting loader classification...")
-    _, _, loader_class_names = load_dataset("loader", candy_eval_transform)
-    loader_models_list = []
-    loader_data_dir = "loader"
-    for model_name in short_model_names:
-        print(f"\n🚀 Training {model_name.upper()} for loader classification")
-        model_path = f"loader_classifier_{model_name}.pth"
-        model, _ = load_or_train_model(loader_data_dir, model_path=model_path, num_epochs=num_epochs,
-                                       model_name=model_name, target="loader")
-        model.to(DEVICE)
-        #torch.save(model.state_dict(), model_path)
-        model.eval()
-        loader_models_list.append(model)
-
-        acc = evaluate_model(model, loader_data_dir, loader_class_names, sample_size=sample_eval_size)
-        print(f"📦 Loader Accuracy: {acc:.2f}%")
+    loader_models, loader_class_names = load_models_for_task(
+        task_name="loader",
+        data_dir="loader",
+        model_names=short_model_names,
+        num_epochs=num_epochs,
+        target="loader",
+        sample_eval_size=sample_eval_size
+    )
 
     # ===== DETECTION =====
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
 
     # ===== CLASSIFICATION =====
-    candy_classified = classify_candies(screenshot_path, candies_box, models_list, candy_class_names, update=False)
-    gap_classified = []
-    for box, _ in gap_box:
-        gap_classified.append((box, "gap"))
-    objective_classified = classify_candies(screenshot_path, objective_box, objective_models_list, objective_class_names, update=False)
+    candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False)
+    gap_classified = [(box, "gap") for box, _ in gap_box]
+    objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False)
+    loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False)
 
-    loader_classified = classify_candies(screenshot_path, loader_box, loader_models_list, loader_class_names, update=False)
+    # ===== OBJECTIVE NUMBERS =====
+    objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
 
-    # Print objectives
     print("\n🎯 Objectives detected:")
-    for box, label in objective_classified:
-        x1, y1, x2, y2 = box
-        print(f"Objective: {label} at ({x1}, {y1}, {x2}, {y2})")
-    
+    for idx, (box, label) in enumerate(objective_classified):
+        number = objective_numbers[idx][1] if idx < len(objective_numbers) else "?"
+        print(f"Objective {idx + 1}: {label} (Number: {number})")
+    moves_left = detect_moves(screenshot_path)
     # ===== GRID STRUCTURING =====
     grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
     for i, row in enumerate(grid):
