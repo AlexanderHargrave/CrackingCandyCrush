@@ -1,0 +1,19 @@
+{
+  "moves_left": 58,
+  "objectives": [
+    { "label": "glass", "number": 20 }
+   ] ,
+  "grid_rows": 9,
+  "grid_columns": 8,
+  "grid_labels": [
+    "red_jelly2", "gap", "gap", "gap", "gap", "gap", "gap", "red_jelly2",
+    "gap", "red_jelly2", "gap", "gap", "gap", "gap", "red_jelly2", "gap",
+    "red_jelly2", "gap", "gap", "gap", "gap", "gap", "gap", "red_jelly2",
+    "gap", "red_jelly2", "gap", "gap", "gap", "gap", "red_jelly2", "gap",
+    "red_jelly2", "gap", "gap", "loader of fish", "loader of fish", "gap", "gap", "red_jelly2",
+    "gap", "gap", "gap", "green", "green", "gap", "gap", "gap",
+    "gap", "gap", "purple", "orange", "purple", "orange", "gap", "gap",
+    "gap", "gap", "orange", "green", "blueF", "green", "gap", "gap",
+    "gap", "gap", "purple", "blue", "purple", "blue", "gap", "gap"
+  ]
+}
