@@ -181,7 +181,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    acc_path = os.path.join("graphs", f"{model_name}_accuracy_objective.png")
+    acc_path = os.path.join("graphs", f"{model_name}_accuracy.png")
     plt.savefig(acc_path)
     plt.close()
     print(f"📈 Accuracy graph saved to '{acc_path}'")
@@ -196,7 +196,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
-    loss_path = os.path.join("graphs", f"{model_name}_loss_objective.png")
+    loss_path = os.path.join("graphs", f"{model_name}_loss.png")
     plt.savefig(loss_path)
     plt.close()
     print(f"📉 Loss graph saved to '{loss_path}'")
@@ -283,24 +283,69 @@ def extract_jelly_colour_range(folder):
     all_pixels = np.vstack(pixels)
     # Get mean values and the range to be detected is like 20 pixels around the mean
     mean_vals = np.mean(all_pixels, axis=0)
-    min_vals = np.maximum(mean_vals - 15, 0)  # Ensure no negative values
-    max_vals = np.minimum(mean_vals + 15, 255)  # Ensure no values exceed 255
+    min_vals = np.maximum(mean_vals - 10, 0)  # Ensure no negative values
+    max_vals = np.minimum(mean_vals + 10, 255)  # Ensure no values exceed 255
     return min_vals, max_vals
+# Instead of extract jelly colour range, i've given like one small 5 by 5 or less size image for jelly1 and jelly2, detect all pixels in the image and then count matching in given crop
+def extract_unique_colors(folder):
+    """Extract unique RGB tuples from a reference image"""
+    # make it so extracts from all images in directory
+    pixels = []
+    for fname in os.listdir(folder):
+        if fname.endswith(".png"):
+            img = Image.open(os.path.join(folder, fname)).convert("RGB")
+            pixels.append(np.array(img).reshape(-1, 3))
+    all_pixels = np.vstack(pixels)
+    unique_colors = np.unique(all_pixels, axis=0)
+    # Convert to list of tuples
+    reference_colors = [tuple(color) for color in unique_colors if np.all(color >= 0) and np.all(color <= 255)]
+    return reference_colors
+def count_matching_colors_from_patch(crop_pil, reference_colors, tolerance=3):
+    crop = np.array(crop_pil).reshape(-1, 3)
+    count = 0
+    for ref_color in reference_colors:
+        # Create a mask for pixels within the tolerance range
+        mask = np.all(np.abs(crop - ref_color) <= tolerance, axis=1)
+        count += np.sum(mask)
+    return count
 def count_matching_jelly_pixels(crop_pil, color_range):
     crop = np.array(crop_pil).reshape(-1, 3)
     min_rgb, max_rgb = color_range
     match = np.all((crop >= min_rgb) & (crop <= max_rgb), axis=1)
     return np.sum(match)
-def detect_jelly_layer(crop_pil, range1, range2, thresh1=30, thresh2=30):
-    count1 = count_matching_jelly_pixels(crop_pil, range1)
-    count2 = count_matching_jelly_pixels(crop_pil, range2)
-    if count2 > count1 and count2 > thresh2:
-        return "two layer jelly"
-    elif count1 > thresh1:
+def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, thresh2=30, thresh3 = 30, thresh4 = 20, candy_type = None):
+    count1 = count_matching_colors_from_patch(crop_pil, range1)
+    count2 = count_matching_colors_from_patch(crop_pil, range2)
+    count3 = count_matching_jelly_pixels(crop_pil, range3)
+    count4 = count_matching_colors_from_patch(crop_pil, range4, tolerance = 5)
+    #if "frosting" in candy_type:
+        #print(count1, count2, count3, count4)
+    if "orange" in candy_type:
+        thresh3 = 70
+    
+    if count1 > thresh1 and count1 > count2 and count3 < count1:
         return "one layer jelly"
+    elif count2 > thresh2 and count1 < count2 and count3 < count2:
+        return "two layer jelly"
+    elif count3 > thresh3 and count1 < count3 and count2 < count3:
+        return "marmalade"
     else:
-        return "no jelly"
-def classify_candies(image_path, detections, models, class_names, update = False, check_candy = True, range1 = None, range2 = None):
+        """
+        if "frosting" in candy_type:
+            if count1 > 0 and count2 == 0 and count3 == 0 and count4 <= 5:
+                print(count1, count2, count4, candy_type)
+                return "one layer jelly"
+            if count2 > 0 and count1 == 0 and count3 ==0 and count4 <= 5:
+                return "two layer jelly"
+                """
+        
+        if count1 > count4 and count1 > count2  and count1 > count3:
+            return "one layer jelly"
+        elif count2 > count4 and count2 > count3 and count2 > count1:
+            return "two layer jelly"
+        else:
+            return "no jelly"
+def classify_candies(image_path, detections, models, class_names, update = False, check_candy = True, range1 = None, range2 = None, range3 = None, range4 = None):
     image = Image.open(image_path).convert("RGB")
     predictions = []
     max_per_class = 50  # Limit per class to avoid dataset bloat
@@ -318,11 +363,21 @@ def classify_candies(image_path, detections, models, class_names, update = False
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         result = class_names[modal_pred]
         if check_candy:
-            jelly_levels = detect_jelly_layer(crop, range1, range2)
-            if jelly_levels == "one layer jelly":
-                result += "_jelly1"
-            elif jelly_levels == "two layer jelly":
-                result += "_jelly2"
+            temp3 = 30
+            if "orange" in result:       
+                temp3 = 100
+            jelly_levels = detect_jelly_layer(crop, range1, range2, range3, range4, thresh3 = temp3, candy_type=result)
+            if "bubblegum" not in result:
+                if jelly_levels == "one layer jelly":
+                    result += "_jelly1"
+                elif jelly_levels == "two layer jelly":
+                    result += "_jelly2"
+                elif jelly_levels == "marmalade":
+                    if "marmalade" not in result:
+                        result += "_marmalade"
+                elif jelly_levels == "no jelly":
+                    pass
+
         predictions.append((box, result))
         if update:
             target_folder = os.path.join("candy_dataset", class_names[modal_pred])
@@ -562,7 +617,7 @@ def detect_moves(image_path):
         result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
         if not result:
             return 0
-    print(f"Moves Left: {result}")
+    # print(f"Moves Left: {result}")
     return result[0] if result else 0 
 
 
@@ -632,7 +687,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test5.png"
+    screenshot_path = "data/test/images/test12.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -646,6 +701,7 @@ if __name__ == "__main__":
         data_dir="candy_dataset",
         model_names=model_names,
         num_epochs=num_epochs,
+        target="candy",
         sample_eval_size=sample_eval_size
     )
 
@@ -671,12 +727,14 @@ if __name__ == "__main__":
 
     # ===== DETECTION =====
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
-    range1 = extract_jelly_colour_range("jelly_levels/one_jelly")
-    range2 = extract_jelly_colour_range("jelly_levels/two_jelly")
+    range1 = extract_unique_colors("jelly_levels/one_jelly")
+    range2 = extract_unique_colors("jelly_levels/two_jelly")
+    range3 = extract_jelly_colour_range("jelly_levels/marmalade")
+    range4 = extract_unique_colors("jelly_levels/zero_jelly")
 
 
     # ===== CLASSIFICATION =====
-    candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1 = range1, range2 = range2)
+    candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3 = range3, range4 = range4)
     gap_classified = [(box, "gap") for box, _ in gap_box]
     objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
     loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
@@ -689,6 +747,7 @@ if __name__ == "__main__":
         number = objective_numbers[idx][1] if idx < len(objective_numbers) else "?"
         print(f"Objective {idx + 1}: {label} (Number: {number})")
     moves_left = detect_moves(screenshot_path)
+    print(f"Moves Left: {moves_left}")
     # ===== GRID STRUCTURING =====
     grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
     for i, row in enumerate(grid):

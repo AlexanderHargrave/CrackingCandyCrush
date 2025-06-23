@@ -9,6 +9,7 @@ from candy_vision_train import (
     get_objective_numbers,
     detect_moves,
     cluster_detections_by_rows,
+    extract_unique_colors,
 )
 
 yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -25,6 +26,7 @@ candy_models, candy_class_names = load_models_for_task(
     data_dir="candy_dataset",
     model_names=model_names,
     num_epochs=num_epochs,
+    target="candy",
     sample_eval_size=sample_eval_size
 )
 objective_models, objective_class_names = load_models_for_task(
@@ -44,22 +46,24 @@ loader_models, loader_class_names = load_models_for_task(
     sample_eval_size=sample_eval_size
 )
 
-range1 = extract_jelly_colour_range("jelly_levels/one_jelly")
-range2 = extract_jelly_colour_range("jelly_levels/two_jelly")
-
+range1 = extract_unique_colors("jelly_levels/one_jelly")
+range2 = extract_unique_colors("jelly_levels/two_jelly")
+range3 = extract_jelly_colour_range("jelly_levels/marmalade")
+range4 = extract_unique_colors("jelly_levels/zero_jelly")
 def load_ground_truth(label_path):
     with open(label_path, 'r') as f:
         content = f.read().strip()
         if not content:
             raise ValueError(f"Label file {label_path} is empty.")
         return json.loads(content)
-def assert_test(image_path, label_path, range1 = range1, range2 = range2):
+
+def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3 = range3):
     gt = load_ground_truth(label_path)
 
     # Detection
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
     # Classification
-    candy_classified = classify_candies(image_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, check_candy=True)
+    candy_classified = classify_candies(image_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3 = range3, range4 = range4, check_candy=True)
     gap_classified = [(box, "gap") for box, _ in gap_box]
     objective_classified = classify_candies(image_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
     loader_classified = classify_candies(image_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
@@ -86,7 +90,16 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2):
     # Candies (optionally check labels)
     detected_labels = [label for row in grid for _, label in row]
     expected_labels = gt["grid_labels"]
+    if detected_labels != expected_labels:
+        for i in range(0, len(detected_labels)):
+            if detected_labels[i] != expected_labels[i]:
+                print(f"Detected Label:  {detected_labels[i]}")
+                print(f"Expected Label:  {expected_labels[i]}")
+                print(f"This is at index {i}")
     assert detected_labels == expected_labels, f"Grid labels mismatch."
+    
+
+    
     print(f"✅ {os.path.basename(image_path)} passed.")
 
 def run_all_tests():
@@ -97,10 +110,13 @@ def run_all_tests():
        
         test_label_path = os.path.join(label_dir, os.path.splitext(test_img)[0] + ".json")
         assert os.path.exists(test_label_path), f"No label file found for {test_img}"
+
         try:
             assert_test(test_img_path, test_label_path)
         except AssertionError as e:
             print(f"❌ {test_img} failed: {e}")
 
 if __name__ == "__main__":
+    print("Running tests...")
     run_all_tests()
+    print("All tests completed.")
