@@ -48,7 +48,7 @@ loader_models, loader_class_names = load_models_for_task(
 
 range1 = extract_unique_colors("jelly_levels/one_jelly")
 range2 = extract_unique_colors("jelly_levels/two_jelly")
-range3 = extract_jelly_colour_range("jelly_levels/marmalade")
+range3 = extract_unique_colors("jelly_levels/marmalade")
 range4 = extract_unique_colors("jelly_levels/zero_jelly")
 def load_ground_truth(label_path):
     with open(label_path, 'r') as f:

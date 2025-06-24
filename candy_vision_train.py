@@ -313,10 +313,10 @@ def count_matching_jelly_pixels(crop_pil, color_range):
     min_rgb, max_rgb = color_range
     match = np.all((crop >= min_rgb) & (crop <= max_rgb), axis=1)
     return np.sum(match)
-def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, thresh2=30, thresh3 = 25, thresh4 = 50, candy_type = None):
+def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, thresh2=30, thresh3 = 50, thresh4 = 50, candy_type = None):
     count1 = count_matching_colors_from_patch(crop_pil, range1)
     count2 = count_matching_colors_from_patch(crop_pil, range2)
-    count3 = count_matching_jelly_pixels(crop_pil, range3)
+    count3 = count_matching_colors_from_patch(crop_pil, range3)
     count4 = count_matching_colors_from_patch(crop_pil, range4, tolerance = 5)
     #if "frosting" in candy_type:
         #print(count1, count2, count3, count4)
@@ -329,49 +329,104 @@ def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, th
     if "bubblegum" in candy_type:
         thresh4 = 10
     if "frosting" in candy_type:
+        thresh1 = 20
+        thresh2 = 20
+        thresh3 = 20
         thresh4 = 30
-    if count2 >= 300:
-        crop_pil.save("data/temp/crop_pil.png")
+
     if count1 > thresh1 and count1 > count2 and count3 < count1:
         # check if count1 is less than 3 away from count2, if so crop and check again
-        if count2 > 0 and abs(count1 - count2) < 3:
-            crop_pil = crop_pil.crop((3, 3, crop_pil.width-3, crop_pil.height-3))
+        if count2 > 1 and abs(count1 - count2) < 10:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
             count1 = count_matching_colors_from_patch(crop_pil, range1)
             count2 = count_matching_colors_from_patch(crop_pil, range2)
             if count1 > count2:
                 return "one layer jelly"
             else:
                 return "two layer jelly"
+        elif count4 >= 3000:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+            count1 = count_matching_colors_from_patch(crop_pil, range1)
+            count2 = count_matching_colors_from_patch(crop_pil, range2)
+            count3 = count_matching_colors_from_patch(crop_pil, range3)
+            if count1 > thresh1 and count1 > count2 and count1 > count3:
+                return "one layer jelly"
+            return "no jelly"
         return "one layer jelly"
+    elif count1 > thresh1 and (count1== count2 or count1 == count3):
+        crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+        count1 = count_matching_colors_from_patch(crop_pil, range1)
+        count2 = count_matching_colors_from_patch(crop_pil, range2)
+        count3 = count_matching_colors_from_patch(crop_pil, range3)
+        if count1 > thresh1 and count1 > count2 and count1 > count3:
+            return "one layer jelly"
+        elif count2 > thresh2 and count2 > count1 and count2 > count3:
+            return "two layer jelly"
+        elif count3 > thresh3 and count3 > count2 and count3 > count1:
+            return "marmalade"
+        else:
+            return "no jelly"
+                               
     elif count2 > thresh2 and count1 < count2 and count3 < count2:
         # check if count2 is less than 3 away from count1, if so crop and check again
-        if count1 > 0 and abs(count2 - count1) < 3:
-            crop_pil = crop_pil.crop((3, 3, crop_pil.width-3, crop_pil.height-3))
+        if count1 > 1 and abs(count2 - count1) < 10:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
             count1 = count_matching_colors_from_patch(crop_pil, range1)
             count2 = count_matching_colors_from_patch(crop_pil, range2)
             if count2 > count1:
                 return "two layer jelly"
             else:
                 return "one layer jelly"
+        elif count4 >= 3000:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+            count1 = count_matching_colors_from_patch(crop_pil, range1)
+            count2 = count_matching_colors_from_patch(crop_pil, range2)
+            count3 = count_matching_colors_from_patch(crop_pil, range3)
+            if count2 > thresh1 and count2 > count1 and count2 > count3:
+                return "two layer jelly"
+            return "no jelly"
         return "two layer jelly"
+    elif count2> thresh2 and (count1== count2 or count2 == count3):
+        crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+        count1 = count_matching_colors_from_patch(crop_pil, range1)
+        count2 = count_matching_colors_from_patch(crop_pil, range2)
+        count3 = count_matching_colors_from_patch(crop_pil, range3)
+        if count1 > thresh1 and count1 > count2 and count1 > count3:
+            return "one layer jelly"
+        elif count2 > thresh2 and count2 > count1 and count2 > count3:
+            return "two layer jelly"
+        elif count3 > thresh3 and count3 > count2 and count3 > count1:
+            return "marmalade"
+        else:
+            return "no jelly"
     elif count3 > thresh3 and count1 < count3 and count2 < count3:
+        if count3 // 2 > count1 and count3//2 > count2:
+            return "marmalade"
+        elif count1 > count3//2:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+            count1 = count_matching_colors_from_patch(crop_pil, range1)
+            count2 = count_matching_colors_from_patch(crop_pil, range2)
+            count3 = count_matching_colors_from_patch(crop_pil, range3)
+            if count3 > count1 and count4 > count2:
+                return "marmalade"
+            elif count1 > count3:
+                return "one layer jelly"
+            elif count2 > count3:
+                return "two layer jelly"
         #print(count1, count2, count3, count4, candy_type)
+        elif count4 >= 3000:
+            crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
+            count3 = count_matching_colors_from_patch(crop_pil, range3)
+            if count3 > thresh3:
+                return "marmalade"
+            return "no jelly"
         return "marmalade"
     else:
-        """
-        if "frosting" in candy_type:
-            if count1 > 0 and count2 == 0 and count3 == 0 and count4 <= 5:
-                print(count1, count2, count4, candy_type)
-                return "one layer jelly"
-            if count2 > 0 and count1 == 0 and count3 ==0 and count4 <= 5:
-                return "two layer jelly"
-                """
         if count1 > count4 //2 and count1 > count2  and count1 > count3:
             return "one layer jelly"   
         elif count2 > count4 //2 and count2 > count3 and count2 > count1:
             return "two layer jelly"
         else:
-
             if count1 > 10 and count4 > 30:
                 crop_pil = crop_pil.crop((3, 3, crop_pil.width-3, crop_pil.height-3))
                 count1 = count_matching_colors_from_patch(crop_pil, range1)
@@ -422,10 +477,7 @@ def classify_candies(image_path, detections, models, class_names, update = False
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         result = class_names[modal_pred]
         if check_candy:
-            temp3 = 25
-            if "orange" in result:       
-                temp3 = 100
-            jelly_levels = detect_jelly_layer(crop, range1, range2, range3, range4, thresh3 = temp3, candy_type=result)
+            jelly_levels = detect_jelly_layer(crop, range1, range2, range3, range4, candy_type=result)
             if "bubblegum" not in result:
                 if jelly_levels == "one layer jelly":
                     result += "_jelly1"
@@ -746,7 +798,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test23.png"
+    screenshot_path = "data/test/images/test30.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -788,7 +840,7 @@ if __name__ == "__main__":
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
     range1 = extract_unique_colors("jelly_levels/one_jelly")
     range2 = extract_unique_colors("jelly_levels/two_jelly")
-    range3 = extract_jelly_colour_range("jelly_levels/marmalade")
+    range3 = extract_unique_colors("jelly_levels/marmalade")
     range4 = extract_unique_colors("jelly_levels/zero_jelly")
 
 
