@@ -478,7 +478,10 @@ def classify_candies(image_path, detections, models, class_names, update = False
         result = class_names[modal_pred]
         if check_candy:
             jelly_levels = detect_jelly_layer(crop, range1, range2, range3, range4, candy_type=result)
-            if "bubblegum" not in result:
+            if "bubblegum" in result:
+                if jelly_levels == "marmalade":
+                    result += "_marmalade"
+            else:
                 if jelly_levels == "one layer jelly":
                     result += "_jelly1"
                 elif jelly_levels == "two layer jelly":
@@ -798,7 +801,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test30.png"
+    screenshot_path = "data/test/images/test22.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
