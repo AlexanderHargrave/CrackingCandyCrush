@@ -23,6 +23,7 @@ import pytesseract
 import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
+from candy_simulation import find_possible_moves
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
 IMG_SIZE = 64
@@ -778,7 +779,7 @@ def get_objective_numbers(image_path, objective_detections):
             objective_numbers.append((box, detected_number))
 
     return objective_numbers
-def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=None, sample_eval_size=1):
+def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=None, sample_eval_size=1, eval = True):
     print(f"\n🧠 Loading models for {task_name} classification...")
     _, _, class_names = load_dataset(data_dir, candy_eval_transform)
     models_list = []
@@ -792,16 +793,16 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
         # torch.save(model.state_dict(), model_path)
         model.eval()
         models_list.append(model)
-
-        acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
-        print(f"{task_name.title()} Accuracy: {acc:.2f}%")
+        if eval == True:
+            acc = evaluate_model(model, data_dir, class_names, sample_size=sample_eval_size)
+            print(f"{task_name.title()} Accuracy: {acc:.2f}%")
 
     return models_list, class_names
 
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test22.png"
+    screenshot_path = "data/test/images/test2.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -866,6 +867,11 @@ if __name__ == "__main__":
     grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
+    moves = find_possible_moves(grid)
+
+    print("\n🧠 Possible moves:")
+    for ((r1, c1), (r2, c2), c1_label, c2_label) in moves:
+        print(f"Swap ({r1}, {c1}) [{c1_label[1]}] with ({r2}, {c2}) [{c2_label[1]}]")
     """
     print(f"Expanding dataset iteration...")
     auto_expand_dataset_from_yolo(

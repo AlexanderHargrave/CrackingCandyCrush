@@ -15,8 +15,8 @@ from candy_vision_train import (
 yolo_model_path = "runs/detect/train7/weights/best.pt"
 sample_eval_size = 10000
 num_epochs = 50
-model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
-short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+model_names = ["resnet34"]
+short_model_names =  ["resnet18"]
 test_image_dir = "data/test/images"
 label_dir = "data/test/labels"
 
