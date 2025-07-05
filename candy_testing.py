@@ -11,9 +11,9 @@ from candy_vision_train import (
     cluster_detections_by_rows,
     extract_unique_colors,
 )
-
+from candy_simulation import find_possible_moves
 yolo_model_path = "runs/detect/train7/weights/best.pt"
-sample_eval_size = 10000
+sample_eval_size = 1
 num_epochs = 50
 model_names = ["resnet34"]
 short_model_names =  ["resnet18"]
@@ -97,6 +97,33 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3
                 print(f"Expected Label:  {expected_labels[i]}")
                 print(f"This is at index {i}")
     assert detected_labels == expected_labels, f"Grid labels mismatch."
+     # === Move Detection ===
+    predicted_moves = find_possible_moves(grid)
+
+    # Normalize format: ((r1, c1), (r2, c2), l1, l2) → [[r1, c1], [r2, c2], l1, l2]
+    predicted_moves_fmt = [
+        [[r1, c1], [r2, c2], str(l1 if isinstance(l1, str) else l1[1]), str(l2 if isinstance(l2, str) else l2[1])]
+        for ((r1, c1), (r2, c2), l1, l2) in predicted_moves
+    ]
+    predicted_moves_fmt_sorted = sorted(predicted_moves_fmt)
+
+    expected_moves = gt.get("possible_moves", [])
+    expected_moves_sorted = sorted(expected_moves)
+
+    if predicted_moves_fmt_sorted != expected_moves_sorted:
+        print(f"❌ Move mismatch:")
+        print('"possible_moves": [')
+        for i, m in enumerate(predicted_moves_fmt_sorted):
+            line = f"  {m}"
+            if i != len(predicted_moves_fmt_sorted) - 1:
+                line += ","
+            print(line)
+        print("]")
+        print(f"Expected moves:")
+        for m in expected_moves_sorted:
+            print(" ", m)
+
+    assert predicted_moves_fmt_sorted == expected_moves_sorted, f"Possible moves mismatch."
     
 
     

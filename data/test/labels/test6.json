@@ -90,5 +90,35 @@
     "gap",
     "gap",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[1, 2], [1, 3], "blue", "green_jelly1"],
+  [[1, 2], [2, 2], "blue", "green_jelly1"],
+  [[1, 5], [1, 6], "green_jelly1", "blue"],
+  [[1, 6], [2, 6], "blue", "green_jelly1"],
+  [[2, 1], [2, 2], "blue", "green_jelly1"],
+  [[2, 1], [3, 1], "blue", "green_jelly2"],
+  [[2, 2], [2, 3], "green_jelly1", "blue_jelly1"],
+  [[2, 2], [3, 2], "green_jelly1", "blue_jelly2"],
+  [[2, 5], [2, 6], "blue_jelly1", "green_jelly1"],
+  [[2, 6], [2, 7], "green_jelly1", "blue"],
+  [[2, 6], [3, 6], "green_jelly1", "blue_jelly2"],
+  [[2, 7], [3, 7], "blue", "green_jelly2"],
+  [[3, 4], [4, 4], "purple_jelly2", "red_jelly2"],
+  [[4, 3], [4, 4], "purple_jelly2", "red_jelly2"],
+  [[4, 4], [4, 5], "red_jelly2", "purple_jelly2"],
+  [[4, 4], [5, 4], "red_jelly2", "purple_jelly2"],
+  [[5, 1], [6, 1], "green_jelly2", "blue"],
+  [[5, 2], [6, 2], "blue_jelly2", "green_jelly1"],
+  [[5, 6], [6, 6], "blue_jelly2", "green_jelly1"],
+  [[5, 7], [6, 7], "green_jelly2", "blue"],
+  [[6, 1], [6, 2], "blue", "green_jelly1"],
+  [[6, 2], [6, 3], "green_jelly1", "blue_jelly1"],
+  [[6, 2], [7, 2], "green_jelly1", "blue"],
+  [[6, 5], [6, 6], "blue_jelly1", "green_jelly1"],
+  [[6, 6], [6, 7], "green_jelly1", "blue"],
+  [[6, 6], [7, 6], "green_jelly1", "blue"],
+  [[7, 2], [7, 3], "blue", "green_jelly1"],
+  [[7, 5], [7, 6], "green_jelly1", "blue"]
+]
 }

@@ -76,5 +76,13 @@
     "dragonegg_marmalade",
     "gap",
     "dragonegg_marmalade"
-  ]
+  ],
+  "possible_moves": [
+  [[2, 0], [3, 0], "red_jelly1", "purple_jelly1"],
+  [[2, 3], [2, 4], "orange_jelly1", "blue_jelly1"],
+  [[2, 4], [3, 4], "blue_jelly1", "purple_jelly1"],
+  [[3, 0], [3, 1], "purple_jelly1", "red_jelly1"],
+  [[3, 3], [3, 4], "blue_jelly1", "purple_jelly1"],
+  [[3, 4], [3, 5], "purple_jelly1", "blue_jelly1"]
+]
 }

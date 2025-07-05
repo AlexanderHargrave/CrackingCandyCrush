@@ -90,5 +90,11 @@
     "frosting1_marmalade",
     "frosting1_marmalade",
     "green"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 0], [1, 0], "purple", "bomb"],
+  [[1, 0], [1, 1], "bomb", "purple"],
+  [[1, 0], [2, 0], "bomb", "purple"],
+  [[3, 4], [4, 4], "orangeW", "blueW"]
+]
 }

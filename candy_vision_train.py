@@ -157,7 +157,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
             patience_counter += 1
             print(f"No improvement. Patience: {patience_counter}/{patience}")
             if patience_counter >= patience:
-                print("⏹️ Early stopping triggered.")
+                print("Early stopping triggered.")
                 break
 
     if best_model_state is not None:
@@ -185,7 +185,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     acc_path = os.path.join("graphs", f"{model_name}_accuracy.png")
     plt.savefig(acc_path)
     plt.close()
-    print(f"📈 Accuracy graph saved to '{acc_path}'")
+    print(f"Accuracy graph saved to '{acc_path}'")
 
     # Loss plot
     plt.figure(figsize=(8, 5))
@@ -200,7 +200,7 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     loss_path = os.path.join("graphs", f"{model_name}_loss.png")
     plt.savefig(loss_path)
     plt.close()
-    print(f"📉 Loss graph saved to '{loss_path}'")
+    print(f"Loss graph saved to '{loss_path}'")
 
     return model
 
@@ -216,10 +216,10 @@ def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_e
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     else:
         print(model_name)
-        print("⚠️ No pre-trained model found. Training a new one...")
+        print("No pre-trained model found. Training a new one...")
         model = train_model(model_name, train_loader, val_loader, num_epochs=num_epochs, lr=lr, target=target)
         torch.save(model.state_dict(), model_path)
-        print(f"✅ Model saved to {model_path}")
+        print(f"Model saved to {model_path}")
 
     model.eval()
     return model, class_names
@@ -245,7 +245,7 @@ def evaluate_model(model, dataset_dir, class_names, sample_size=100):
             correct += 1
 
     accuracy = 100 * correct / len(sample_indices)
-    print(f"🔍 Accuracy on {len(sample_indices)} random samples: {accuracy:.2f}%")
+    print(f"Accuracy on {len(sample_indices)} random samples: {accuracy:.2f}%")
     return accuracy
 def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/best.pt"):
     model = YOLO(yolo_weights)
@@ -522,7 +522,7 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
     all_detections = [(box, label) for box, label in candy_detections + gap_detections]
 
     if not candy_detections:
-        print("⚠️ No candies detected.")
+        print("No candies detected.")
         return []
 
     # === Step 1: Estimate board dimensions from candy positions ===
@@ -546,10 +546,10 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
     num_rows = round(grid_height / avg_candy_height)
 
     if num_cols == 0 or num_rows == 0:
-        print("⚠️ Could not infer grid dimensions.")
+        print("Could not infer grid dimensions.")
         return []
 
-    print(f"📐 Estimated Grid: {num_rows} rows x {num_cols} cols")
+    print(f"Estimated Grid: {num_rows} rows x {num_cols} cols")
 
     # === Step 2: Build grid shape ===
     grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
@@ -802,7 +802,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test2.png"
+    screenshot_path = "data/test/images/test19.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -857,7 +857,7 @@ if __name__ == "__main__":
     # ===== OBJECTIVE NUMBERS =====
     objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
 
-    print("\n🎯 Objectives detected:")
+    print("\nObjectives detected:")
     for idx, (box, label) in enumerate(objective_classified):
         number = objective_numbers[idx][1] if idx < len(objective_numbers) else "?"
         print(f"Objective {idx + 1}: {label} (Number: {number})")
@@ -869,7 +869,7 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     moves = find_possible_moves(grid)
 
-    print("\n🧠 Possible moves:")
+    print("\nPossible moves:")
     for ((r1, c1), (r2, c2), c1_label, c2_label) in moves:
         print(f"Swap ({r1}, {c1}) [{c1_label[1]}] with ({r2}, {c2}) [{c2_label[1]}]")
     """
@@ -880,9 +880,9 @@ if __name__ == "__main__":
         candy_dataset_path="candy_dataset",
         max_per_class=50
     )
-    print("✅ Dataset expansion completed.")
+    print("Dataset expansion completed.")
     # run this to get all the objective and loader images
     print("Collecting objective and loader images...")
     get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader")
-    print("✅ Objective and loader images collected.")"""
+    print("Objective and loader images collected.")"""
 

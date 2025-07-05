@@ -81,5 +81,8 @@
     "blue",
     "gap",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[7, 4], [8, 4], "blueF", "purple"]
+]
 }

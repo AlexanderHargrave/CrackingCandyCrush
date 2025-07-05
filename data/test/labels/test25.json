@@ -98,5 +98,8 @@
     "purple_marmalade",
     "red_marmalade",
     "blueH_jelly2"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 7], [1, 7], "green_jelly2", "blue_jelly2"]
+]
 }

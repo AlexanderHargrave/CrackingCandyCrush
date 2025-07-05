@@ -99,5 +99,16 @@
     "frosting2_jelly1",
     "gap",
     "blue_jelly2"
-  ]
+  ],
+  "possible_moves": [
+  [[1, 2], [1, 3], "bomb_jelly1", "green_jelly1"],
+  [[1, 2], [2, 2], "bomb_jelly1", "green_jelly1"],
+  [[1, 3], [2, 3], "green_jelly1", "red_jelly1"],
+  [[1, 4], [2, 4], "red_jelly2", "green_jelly2"],
+  [[1, 5], [2, 5], "green_jelly1", "red_jelly1"],
+  [[4, 4], [5, 4], "blue_jelly1", "bomb_jelly1"],
+  [[5, 3], [5, 4], "blue_jelly1", "bomb_jelly1"],
+  [[5, 4], [5, 5], "bomb_jelly1", "blue_jelly1"],
+  [[5, 4], [6, 4], "bomb_jelly1", "blue_jelly1"]
+]
 }

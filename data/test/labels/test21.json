@@ -65,5 +65,8 @@
     "green_marmalade",
     "gap",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[1, 3], [2, 3], "blue", "green"]
+]
 }

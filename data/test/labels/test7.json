@@ -54,5 +54,9 @@
     "frosting1_jelly1",
     "frosting1_jelly1",
     "frosting1"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 2], [1, 2], "green", "blue"],
+  [[0, 6], [1, 6], "green", "blue"]
+]
 }

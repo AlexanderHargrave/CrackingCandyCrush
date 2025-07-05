@@ -72,5 +72,9 @@
     "purple_jelly1",
     "orange_jelly1",
     "bubblegum2"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 3], [0, 4], "purple_jelly1", "bomb_jelly1"],
+  [[6, 3], [7, 3], "blue_jelly1", "green_jelly1"]
+]
 }

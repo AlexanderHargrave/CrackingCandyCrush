@@ -98,5 +98,17 @@
     "frosting3",
     "gap",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 3], [1, 3], "orange", "green"],
+  [[0, 4], [1, 4], "green", "red"],
+  [[0, 5], [1, 5], "orange", "green"],
+  [[1, 3], [1, 4], "green", "red"],
+  [[1, 3], [2, 3], "green", "bomb"],
+  [[1, 4], [1, 5], "red", "green"],
+  [[1, 4], [2, 4], "red", "green"],
+  [[2, 2], [2, 3], "red", "bomb"],
+  [[2, 3], [2, 4], "bomb", "green"],
+  [[2, 3], [3, 3], "bomb", "orange"]
+]
 }

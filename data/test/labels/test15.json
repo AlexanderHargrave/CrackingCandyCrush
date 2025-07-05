@@ -94,5 +94,9 @@
     "frosting3",
     "frosting2",
     "dragonegg_marmalade"
-  ]
+  ],
+  "possible_moves": [
+  [[3, 3], [3, 4], "green", "blue"],
+  [[3, 4], [4, 4], "blue", "red"]
+]
 }

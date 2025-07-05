@@ -90,5 +90,8 @@
     "frosting1_jelly2",
     "frosting1_jelly1",
     "frosting1_marmalade"
-  ]
+  ],
+  "possible_moves": [
+  [[7, 0], [8, 0], "bomb_jelly1", "bomb_jelly1"]
+]
 }

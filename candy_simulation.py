@@ -26,7 +26,14 @@ def is_movable(label):
     if any(x in lowered for x in ["frosting", "marmalade", "gap", "loader", "bubblegum", "empty", "lock", "pinball"]):
         return False
     return True
-
+def is_non_interactive(label):
+    """
+    Returns True if the candy cannot interact with chocolate bombs or specials.
+    """
+    if isinstance(label, tuple):
+        label = label[1]
+    lowered = label.lower().replace(" ", "_")
+    return any(x in lowered for x in ["liquorice", "dragon_egg"])
 def swap(grid, r1, c1, r2, c2):
     """Swap two elements in a copy of the grid and return it."""
     new_grid = [row.copy() for row in grid]
@@ -37,15 +44,16 @@ def has_match(grid, r, c):
     """
     Checks if there's a match at position (r, c).
     A match means 3 or more normalized candies in a row or column.
-    Liquorice swirls do not count as matches.
+    Liquorice swirls do not count as matches. So do not dragon eggs
     """
     label = grid[r][c]
     if not is_movable(label):
         return False
     if isinstance(label, tuple):
         label = label[1]
-    if "liquorice" in label.lower():
-        return False  # can't form matches with liquorice
+    if any(x in label.lower() for x in ["liquorice", "dragonegg"]):
+        return False 
+    
 
     target = normalize_candy_name(label)
 
@@ -55,8 +63,6 @@ def has_match(grid, r, c):
         nc = c + dc
         if is_valid_position(grid, r, nc):
             neighbor = grid[r][nc]
-            if "liquorice" in str(neighbor).lower():
-                break
             if normalize_candy_name(neighbor) == target:
                 count += 1
             else:
@@ -65,8 +71,6 @@ def has_match(grid, r, c):
         nc = c + dc
         if is_valid_position(grid, r, nc):
             neighbor = grid[r][nc]
-            if "liquorice" in str(neighbor).lower():
-                break
             if normalize_candy_name(neighbor) == target:
                 count += 1
             else:
@@ -80,8 +84,6 @@ def has_match(grid, r, c):
         nr = r + dr
         if is_valid_position(grid, nr, c):
             neighbor = grid[nr][c]
-            if "liquorice" in str(neighbor).lower():
-                break
             if normalize_candy_name(neighbor) == target:
                 count += 1
             else:
@@ -90,46 +92,13 @@ def has_match(grid, r, c):
         nr = r + dr
         if is_valid_position(grid, nr, c):
             neighbor = grid[nr][c]
-            if "liquorice" in str(neighbor).lower():
-                break
             if normalize_candy_name(neighbor) == target:
                 count += 1
             else:
                 break
     return count >= 3
 
-def is_special_candy(label):
-    """
-    Checks if a candy is a special candy (H, V, W, F), regardless of color.
-    """
-    if isinstance(label, tuple):
-        label = label[1]
-    base = label.split('_')[0]
-    return base[-1] in ['H', 'V', 'W', 'F'] if len(base) > 1 else False
 
-def is_chocolate(label):
-    """
-    Checks if a tile is a chocolate.
-    """
-    if isinstance(label, tuple):
-        label = label[1]
-    return "chocolate" in label.lower()
-def is_valid_special_swap(c1, c2):
-    """
-    Returns True if the pair is a valid special/chocolate swap.
-    """
-    if not is_movable(c1) or not is_movable(c2):
-        return False
-
-    if is_chocolate(c1) and is_movable(c2):
-        return True
-    if is_chocolate(c2) and is_movable(c1):
-        return True
-
-    if is_special_candy(c1) and is_special_candy(c2):
-        return True
-
-    return False
 def is_special_candy(label):
     if isinstance(label, tuple):
         label = label[1]
@@ -147,7 +116,8 @@ def is_valid_special_swap(c1, c2):
     # Both must be movable
     if not is_movable(c1) or not is_movable(c2):
         return False
-
+    if (is_chocolate(c1) and is_non_interactive(c2)) or (is_chocolate(c2) and is_non_interactive(c1)):
+        return False
     if is_chocolate(c1) and is_movable(c2):
         return True
     if is_chocolate(c2) and is_movable(c1):

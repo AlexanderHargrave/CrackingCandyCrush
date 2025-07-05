@@ -94,5 +94,12 @@
     "bubblegum4",
     "red_jelly2",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[1, 4], [1, 5], "green_jelly2", "blue"],
+  [[2, 5], [3, 5], "orange_jelly2", "bomb_jelly2"],
+  [[3, 5], [3, 6], "bomb_jelly2", "red_jelly2"],
+  [[3, 5], [4, 5], "bomb_jelly2", "purple_jelly2"],
+  [[5, 7], [6, 7], "red_jelly2", "purple_jelly2"]
+]
 }

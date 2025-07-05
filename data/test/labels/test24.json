@@ -81,5 +81,11 @@
     "orangeH_marmalade",
     "gap",
     "purple_jelly2"
-  ]
+  ],
+  "possible_moves": [
+  [[0, 2], [1, 2], "purple_jelly2", "green_jelly2"],
+  [[1, 2], [1, 3], "green_jelly2", "purple_jelly2"],
+  [[2, 2], [2, 3], "blue_jelly2", "green_jelly2"],
+  [[2, 3], [2, 4], "green_jelly2", "red_jelly2"]
+]
 }

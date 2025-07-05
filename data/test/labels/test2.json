@@ -99,5 +99,13 @@
     "frosting3",
     "frosting2",
     "frosting2"
-  ]
+  ],
+  "possible_moves": [
+  [[3, 0], [3, 1], "blue", "orange"],
+  [[3, 8], [4, 8], "bomb", "green"],
+  [[1, 2], [2, 2], "blue", "bomb"],
+  [[2, 1], [2, 2], "blue", "bomb"],
+  [[2, 8], [3, 8], "green", "bomb"],
+  [[3, 7], [3, 8], "purple", "bomb"]
+]
 }

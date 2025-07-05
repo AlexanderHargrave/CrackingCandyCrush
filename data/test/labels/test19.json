@@ -90,5 +90,8 @@
     "blue_lock",
     "gap",
     "gap"
-  ]
+  ],
+  "possible_moves": [
+  [[1, 4], [2, 4], "bomb_jelly2", "blueV_jelly2"]
+]
 }
