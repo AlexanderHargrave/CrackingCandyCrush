@@ -39,7 +39,44 @@ def swap(grid, r1, c1, r2, c2):
     new_grid = [row.copy() for row in grid]
     new_grid[r1][c1], new_grid[r2][c2] = new_grid[r2][c2], new_grid[r1][c1]
     return new_grid
+def is_liquorice(label):
+    if isinstance(label, tuple):
+        label = label[1]
+    return "liquorice" in label.lower()
 
+def is_marmalade(label):
+    if isinstance(label, tuple):
+        label = label[1]
+    return "marmalade" in label.lower()
+
+def is_lock(label):
+    if isinstance(label, tuple):
+        label = label[1]
+    return "lock" in label.lower()
+
+def is_frosting(label):
+    if isinstance(label, tuple):
+        label = label[1]
+    return "frosting" in label.lower()
+
+def is_bubblegum(label):
+    if isinstance(label, tuple):
+        label = label[1]
+    return "bubblegum" in label.lower()
+
+def reduce_layer(label, base_name):
+    """
+    Generic reducer for frostingX / bubblegumX.
+    Returns reduced label (or 'empty' if level 1).
+    """
+    import re
+    match = re.match(f"{base_name}(\\d)", label)
+    if not match:
+        return label
+    level = int(match.group(1))
+    if level <= 1:
+        return 'empty'
+    return f"{base_name}{level - 1}"
 def has_match(grid, r, c):
     """
     Checks if there's a match at position (r, c).
@@ -275,10 +312,131 @@ def find_all_matches(candy_grid):
     return matched
 def clear_matches(candy_grid, jelly_grid, matched_positions):
     """
-    Clears matched candies by setting them to 'empty'.
-    Also reduces jelly level at those positions.
+    Enhanced clearing function with recursive cascading:
+    - Handles jelly reduction
+    - Removes marmalade/lock wrapping
+    - Pops liquorice/marmalade neighbors
+    - Reduces frosting/bubblegum layers
+    - Bubblegum1 explodes 3x3 area
+    - Special candies clear accordingly (striped, wrapped)
+    - Color bomb clears the most common candy if cleared passively
     """
-    for r, c in matched_positions:
-        candy_grid[r][c] = 'empty'
+    def is_matchable(r, c):
+        label = candy_grid[r][c]
+        return is_movable(label) and not is_chocolate(label) and not is_non_interactive(label)
+    rows, cols = len(candy_grid), len(candy_grid[0])
+
+    # Directions for 4-neighbors and 3x3 area
+    cardinal = [(-1,0), (1,0), (0,-1), (0,1)]
+    surrounding = [(-1,-1), (-1,0), (-1,1),
+                   (0,-1),  (0,0),  (0,1),
+                   (1,-1),  (1,0),  (1,1)]
+
+    # Normalize label helper
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
+
+    # Recursive processing of clearing
+    to_process = set(matched_positions)
+    processed = set()
+
+    while to_process:
+        r, c = to_process.pop()
+        if (r, c) in processed:
+            continue
+        processed.add((r, c))
+
+        label = candy_grid[r][c]
+        base = base_label(label)
+
+        # Special candy clearing logic
+        if is_special_candy(base):
+            direction = base.split('_')[0][-1]  # e.g. 'H', 'V', 'W'
+            if direction == 'H':
+                for cc in range(cols):
+                    if (r, cc) not in processed:
+                        to_process.add((r, cc))
+            elif direction == 'V':
+                for rr in range(rows):
+                    if (rr, c) not in processed:
+                        to_process.add((rr, c))
+            elif direction == 'W':  # wrapped candy
+                for dr, dc in surrounding:
+                    wr, wc = r + dr, c + dc
+                    if is_valid_position(candy_grid, wr, wc) and (wr, wc) not in processed:
+                        to_process.add((wr, wc))
+
+        # Bubblegum1 explosion triggers 3x3 clear around it
+        if "bubblegum1" in base:
+            for dr, dc in surrounding:
+                nr, nc = r + dr, c + dc
+                if is_valid_position(candy_grid, nr, nc) and (nr, nc) not in processed:
+                    to_process.add((nr, nc))
+
+        # Check neighbors for marmalade, liquorice, frosting, bubblegum to affect
+        for dr, dc in cardinal:
+            nr, nc = r + dr, c + dc
+            if not is_valid_position(candy_grid, nr, nc):
+                continue
+            neighbor = candy_grid[nr][nc]
+            neighbor_base = base_label(neighbor)
+
+            if is_liquorice(neighbor_base) or is_marmalade(neighbor_base):
+                if (nr, nc) not in processed:
+                    to_process.add((nr, nc))
+
+            elif "frosting" in neighbor_base:
+                # reduce frosting by 1 layer
+                new_label = reduce_layer(neighbor_base, "frosting")
+                candy_grid[nr][nc] = new_label
+
+            elif "bubblegum" in neighbor_base:
+                if "bubblegum1" in neighbor_base:
+                    # trigger 3x3 explosion around bubblegum1
+                    for dr2, dc2 in surrounding:
+                        br, bc = nr + dr2, nc + dc2
+                        if is_valid_position(candy_grid, br, bc) and (br, bc) not in processed:
+                            to_process.add((br, bc))
+                # reduce bubblegum layer by 1
+                new_label = reduce_layer(neighbor_base, "bubblegum")
+                candy_grid[nr][nc] = new_label
+
+        # Color bomb logic - clears all candies of most common color when cleared passively
+        if "bomb" in base:
+            # count candies currently on board
+            candy_count = {}
+            for i in range(rows):
+                for j in range(cols):
+                    tile = candy_grid[i][j]
+                    tile_base = base_label(tile)
+                    if is_matchable(i, j):
+                        norm = normalize_candy_name(tile_base)
+                        candy_count[norm] = candy_count.get(norm, 0) + 1
+            if candy_count:
+                most_common = max(candy_count, key=candy_count.get)
+                for i in range(rows):
+                    for j in range(cols):
+                        tile = candy_grid[i][j]
+                        tile_base = base_label(tile)
+                        if normalize_candy_name(tile_base) == most_common and (i,j) not in processed:
+                            to_process.add((i,j))
+
+        # Clear or unwrap current tile
+        box = None
+        if isinstance(label, tuple):
+            box, name = label
+        else:
+            name = label
+
+        if "marmalade" in name:
+            name = name.replace("_marmalade", "")
+            candy_grid[r][c] = (box, name) if box else name
+        elif "lock" in name:
+            name = name.replace("_lock", "")
+            candy_grid[r][c] = (box, name) if box else name
+        else:
+            candy_grid[r][c] = 'empty'
+
         reduce_jelly_at(jelly_grid, r, c)
+
 
