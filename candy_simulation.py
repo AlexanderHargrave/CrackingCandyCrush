@@ -155,4 +155,130 @@ def find_possible_moves(grid):
                     special_moves.append(((r, c), (r + 1, c), grid[r][c], grid[r + 1][c]))
 
     return moves + special_moves
+def extract_jelly_grid(grid):
+    """
+    Extracts jelly levels from the main grid and returns two grids:
+    - candy_grid: stripped of jelly suffix
+    - jelly_grid: stores 0 (no jelly), 1 (jelly1), or 2 (jelly2)
+    """
+    rows, cols = len(grid), len(grid[0])
+    candy_grid = [[None for _ in range(cols)] for _ in range(rows)]
+    jelly_grid = [[0 for _ in range(cols)] for _ in range(rows)]
+
+    for r in range(rows):
+        for c in range(cols):
+            cell = grid[r][c]
+            if isinstance(cell, tuple):
+                box, label = cell
+            else:
+                label = cell
+                box = None
+
+            # Parse jelly level
+            jelly_level = 0
+            if "_jelly2" in label:
+                label = label.replace("_jelly2", "")
+                jelly_level = 2
+            elif "_jelly1" in label:
+                label = label.replace("_jelly1", "")
+                jelly_level = 1
+
+            # Assign cleaned values
+            candy_grid[r][c] = (box, label) if box is not None else label
+            jelly_grid[r][c] = jelly_level
+
+    return candy_grid, jelly_grid
+def reduce_jelly_at(jelly_grid, r, c):
+    """
+    Reduces jelly at (r, c) by 1 level (if it's > 0).
+    """
+    if jelly_grid[r][c] > 0:
+        jelly_grid[r][c] -= 1
+def merge_jelly_to_grid(candy_grid, jelly_grid):
+    """
+    Recombines jelly information back into the candy labels for display or saving.
+    """
+    rows, cols = len(candy_grid), len(candy_grid[0])
+    merged_grid = [[None for _ in range(cols)] for _ in range(rows)]
+
+    for r in range(rows):
+        for c in range(cols):
+            cell = candy_grid[r][c]
+            jelly_level = jelly_grid[r][c]
+
+            if isinstance(cell, tuple):
+                box, label = cell
+            else:
+                box, label = None, cell
+
+            if jelly_level == 1:
+                label += "_jelly1"
+            elif jelly_level == 2:
+                label += "_jelly2"
+
+            merged_grid[r][c] = (box, label) if box else label
+
+    return merged_grid
+
+def find_all_matches(candy_grid):
+    """
+    Finds all horizontal and vertical matches of 3 or more candies.
+    Returns a set of (r, c) positions that are part of matches.
+    Only includes movable, matchable candies (excludes frosting, chocolate, etc.).
+    """
+    rows, cols = len(candy_grid), len(candy_grid[0])
+    matched = set()
+
+    def get_label(r, c):
+        label = candy_grid[r][c]
+        return normalize_candy_name(label)
+
+    def is_matchable(r, c):
+        label = candy_grid[r][c]
+        return is_movable(label) and not is_chocolate(label) and not is_non_interactive(label)
+
+    # Horizontal matches
+    for r in range(rows):
+        c = 0
+        while c < cols - 2:
+            if not is_matchable(r, c):
+                c += 1
+                continue
+            label = get_label(r, c)
+            count = 1
+            while c + count < cols and is_matchable(r, c + count) and get_label(r, c + count) == label:
+                count += 1
+            if count >= 3:
+                for i in range(count):
+                    if (r,c+i) not in matched:
+
+                        matched.add((r, c + i))
+            c += max(count, 1)
+
+    # Vertical matches
+    for c in range(cols):
+        r = 0
+        while r < rows - 2:
+            if not is_matchable(r, c):
+                r += 1
+                continue
+            label = get_label(r, c)
+            count = 1
+            while r + count < rows and is_matchable(r + count, c) and get_label(r + count, c) == label:
+                count += 1
+            if count >= 3:
+                for i in range(count):
+                    if (r+i, c) not in matched:
+                        matched.add((r + i, c))
+            r += max(count, 1)
+
+    return matched
+def clear_matches(candy_grid, jelly_grid, matched_positions):
+    """
+    Clears matched candies by setting them to 'empty'.
+    Also reduces jelly level at those positions.
+    """
+    for r, c in matched_positions:
+        candy_grid[r][c] = 'empty'
+        reduce_jelly_at(jelly_grid, r, c)
 
