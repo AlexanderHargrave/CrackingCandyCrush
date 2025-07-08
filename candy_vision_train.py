@@ -23,7 +23,7 @@ import pytesseract
 import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
-from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, swap
+from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, swap, clear_matches, apply_gravity, fill_grid_until_stable
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
 IMG_SIZE = 64
@@ -884,6 +884,19 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     all_matched = find_all_matches(grid)
     print(all_matched)
+    candy_grid, jelly_grid = clear_matches(grid, jelly_grid, all_matched)
+    for i, row in enumerate(candy_grid):
+        print(f"Row {i + 1}: {[label for _,label in row]}")
+    for i, row in enumerate(jelly_grid):
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+    grid = apply_gravity(candy_grid)
+    print("gravity")
+    for i, row in enumerate(grid):
+        print(f"Row {i + 1}: {[label for _, label in row]}")
+    grid = fill_grid_until_stable(grid)
+    print("filled grid")
+    for i, row in enumerate(grid):
+        print(f"Row {i + 1}: {[label for _, label in row]}")
     """
     print(f"Expanding dataset iteration...")
     auto_expand_dataset_from_yolo(

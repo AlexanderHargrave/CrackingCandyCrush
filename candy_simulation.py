@@ -1,5 +1,5 @@
 # candy_simulation.py
-
+import random
 def normalize_candy_name(label):
     """
     Extracts the base candy color/type from a label or a (box, label) tuple.
@@ -231,6 +231,7 @@ def reduce_jelly_at(jelly_grid, r, c):
     """
     if jelly_grid[r][c] > 0:
         jelly_grid[r][c] -= 1
+    return jelly_grid
 def merge_jelly_to_grid(candy_grid, jelly_grid):
     """
     Recombines jelly information back into the candy labels for display or saving.
@@ -310,6 +311,10 @@ def find_all_matches(candy_grid):
             r += max(count, 1)
 
     return matched
+def update_label(cell, new_label):
+    if isinstance(cell, tuple):
+        return (cell[0], new_label)
+    return new_label
 def clear_matches(candy_grid, jelly_grid, matched_positions):
     """
     Enhanced clearing function with recursive cascading:
@@ -388,7 +393,7 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
             elif "frosting" in neighbor_base:
                 # reduce frosting by 1 layer
                 new_label = reduce_layer(neighbor_base, "frosting")
-                candy_grid[nr][nc] = new_label
+                candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
 
             elif "bubblegum" in neighbor_base:
                 if "bubblegum1" in neighbor_base:
@@ -399,7 +404,7 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
                             to_process.add((br, bc))
                 # reduce bubblegum layer by 1
                 new_label = reduce_layer(neighbor_base, "bubblegum")
-                candy_grid[nr][nc] = new_label
+                candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
 
         # Color bomb logic - clears all candies of most common color when cleared passively
         if "bomb" in base:
@@ -430,13 +435,122 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
 
         if "marmalade" in name:
             name = name.replace("_marmalade", "")
-            candy_grid[r][c] = (box, name) if box else name
+            candy_grid[r][c] = update_label(candy_grid[r][c], name)
         elif "lock" in name:
             name = name.replace("_lock", "")
-            candy_grid[r][c] = (box, name) if box else name
+            candy_grid[r][c] = update_label(candy_grid[r][c], name)
         else:
-            candy_grid[r][c] = 'empty'
+            candy_grid[r][c] = update_label(candy_grid[r][c], 'empty')
 
-        reduce_jelly_at(jelly_grid, r, c)
+        jelly_grid = reduce_jelly_at(jelly_grid, r, c)
+    return candy_grid, jelly_grid
+def get_label(cell):
+    return cell[1] if isinstance(cell, tuple) else cell
+def apply_gravity(grid):
+    """
+    Applies gravity from top to bottom. If a movable candy has an empty space below,
+    move it downward by transferring its label. Boxes (if any) are preserved.
+    """
+
+    rows, cols = len(grid), len(grid[0])
+    changed = True
+
+    while changed:
+        changed = False
+        for r in range(rows - 1):  # from top to one before bottom
+            for c in range(cols):
+                curr = grid[r][c]
+                below = grid[r + 1][c]
+
+                if not is_movable(curr):
+                    continue
+
+                below_label = get_label(below) if below is not None else "empty"
+                if below is None or "empty" in below_label:
+                    # Move label downward
+                    grid[r + 1][c] = update_label(below if below else curr, get_label(curr))
+                    grid[r][c] = update_label(curr, "empty")
+                    changed = True
+
+    return grid
+
+
+def get_new_candy():
+    """Returns a random basic candy label."""
+    return random.choice(["red", "blue", "green", "purple", "orange"])
+
+def get_dispenser_candy(loader):
+    """
+    Simulates candy dispenser logic based on loader position.
+    Can be made position-aware or deterministic if needed.
+    """
+    # This is a placeholder — you can use seed tables or patterns here.
+    dispense_choice = ["red", "blue", "green", "purple", "orange"]
+    if "bomb" in loader:
+        dispense_choice.append("redW")
+        dispense_choice.append("blueW")
+        dispense_choice.append("greenW")
+        dispense_choice.append("purpleW")
+        dispense_choice.append("orangeW")
+    if "liquorice" in loader:
+        dispense_choice.append("liquorice_swirl")
+    if "vertical" in loader:
+        dispense_choice.append("redV")
+        dispense_choice.append("blueV")
+        dispense_choice.append("greenV")
+        dispense_choice.append("purpleV")
+        dispense_choice.append("orangeV")
+    if "hoirzontal" in loader:
+        dispense_choice.append("redH")
+        dispense_choice.append("blueH")
+        dispense_choice.append("greenH")
+        dispense_choice.append("purpleH")
+        dispense_choice.append("orangeH")
+    if "chocolate" in loader:
+        dispense_choice.append("bomb")
+    if "fish" in loader:
+        dispense_choice.append("redF")
+        dispense_choice.append("blueF")
+        dispense_choice.append("greenF")
+        dispense_choice.append("purpleF")
+        dispense_choice.append("orangeF")
+    if "egg" in loader:
+        dispense_choice.append("dragonegg")
+
+    return random.choice(dispense_choice)
+def is_empty(cell):
+    return cell is None or get_label(cell) == "empty"
+
+def generate_and_fall_candies(grid):
+    rows, cols = len(grid), len(grid[0])
+    changed = False
+
+    for c in range(cols):
+        for r in range(rows):
+            cell = grid[r][c]
+            if is_empty(cell):
+                above = None if r == 0 else grid[r - 1][c]
+                above_label = get_label(above) if above else "gap"
+
+                if r == 0 or "gap" in above_label or "loader" in above_label or above is None:
+                    # Generate new candy
+                    if above_label == "loader":
+                        new_candy = get_dispenser_candy(get_label(grid[r - 1][c]))
+                    else:
+                        new_candy = get_new_candy()
+
+                    # Drop the new candy down as far as possible
+                    fall_r = r
+                    while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
+                        fall_r += 1
+
+                    grid[fall_r][c] = update_label(grid[fall_r][c], new_candy )
+                    changed = True
+    return grid, changed
+def fill_grid_until_stable(grid):
+    changed = True
+    while changed:
+        grid, changed = generate_and_fall_candies(grid)
+    return grid
 
 
