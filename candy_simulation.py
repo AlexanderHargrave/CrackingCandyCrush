@@ -445,7 +445,7 @@ def apply_gravity(grid):
     """
     rows, cols = len(grid), len(grid[0])
     changed = True
-
+    updated = False
     while changed:
         changed = False
         for r in range(rows - 1): 
@@ -462,7 +462,8 @@ def apply_gravity(grid):
                     grid[r + 1][c] = update_label(below if below else curr, get_label(curr))
                     grid[r][c] = update_label(curr, "empty")
                     changed = True
-    return grid
+                    updated = True
+    return grid, updated
 
 def get_new_candy():
     return random.choice(["red", "blue", "green", "purple", "orange"])
@@ -519,7 +520,7 @@ def generate_and_fall_candies(grid):
                 above = None if r == 0 else grid[r - 1][c]
                 above_label = get_label(above) if above else "gap"
 
-                if r == 0 or "gap" in above_label or "loader" in above_label or above is None:
+                if r == 0 or "gap" in above_label or "loader" in above_label:
                     # Generate new candy
                     if above_label == "loader":
                         new_candy = get_dispenser_candy(get_label(grid[r - 1][c]))
@@ -535,8 +536,89 @@ def generate_and_fall_candies(grid):
 
 def fill_grid_until_stable(grid):
     changed = True
+    updated = 0
     while changed:
         grid, changed = generate_and_fall_candies(grid)
+        updated += 1
+    if updated >= 2:
+        return grid, True
+    return grid, False
+
+def generate_at_top(grid, col):
+    rows = len(grid)
+    for r in range(rows):
+        if is_empty(grid[r][col]):
+            above = None if r == 0 else grid[r - 1][col]
+            above_label = get_label(above) if above else "gap"
+
+            if r == 0 or "gap" in above_label or "loader" in above_label:
+                if above_label == "loader":
+                    new_candy = get_dispenser_candy(get_label(grid[r - 1][col]))
+                else:
+                    new_candy = get_new_candy()
+
+                fall_r = r
+                while fall_r + 1 < rows and is_empty(grid[fall_r + 1][col]):
+                    fall_r += 1
+                grid[fall_r][col] = update_label(grid[fall_r][col], new_candy)
+            break
+
+def apply_diagonal_gravity(grid):
+    rows, cols = len(grid), len(grid[0])
+    changed = False
+
+    def fall_column(col, stop_row):
+        # Pull candies down above stop_row
+        for r in reversed(range(stop_row)):
+            if is_movable(grid[r][col]) and is_empty(grid[r + 1][col]):
+                grid[r + 1][col] = grid[r][col]
+                grid[r][col] = update_label(grid[r][col], "empty")
+                return True
+        return False
+
+    for r in reversed(range(rows - 1)):
+        for c in range(cols):
+            curr = grid[r][c]
+            if not is_movable(curr):
+                continue
+
+            # Try down-left
+            if c > 0 and is_empty(grid[r + 1][c - 1]):
+                grid[r + 1][c - 1] = curr
+                grid[r][c] = update_label(curr, "empty")
+                fall_column(c, r)
+                generate_at_top(grid, c)
+                changed = True
+                continue
+
+            # Try down-right
+            if c < cols - 1 and is_empty(grid[r + 1][c + 1]):
+                grid[r + 1][c + 1] = curr
+                grid[r][c] = update_label(curr, "empty")
+                fall_column(c, r)
+                generate_at_top(grid, c)
+                changed = True
+
+    return grid, changed
+
+def update_board(grid):
+    changed = True
+    while changed:
+        changed = False
+
+        # Apply vertical gravity
+        grid, changed = apply_gravity(grid)
+
+        # Fill empty cells after vertical gravity
+        grid, updated = fill_grid_until_stable(grid)
+        changed = changed or updated
+
+        # Apply diagonal gravity
+        grid, diagonal_changed = apply_diagonal_gravity(grid)
+        changed = changed or diagonal_changed
+
+        # Fill again after diagonal movement
+        grid, updated2 = fill_grid_until_stable(grid)
+        changed = changed or updated2
+
     return grid
-
-
