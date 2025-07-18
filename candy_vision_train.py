@@ -802,7 +802,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test1.png"
+    screenshot_path = "data/test/images/test9.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -889,7 +889,7 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _,label in row]}")
     for i, row in enumerate(jelly_grid):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    grid = update_board(candy_grid)
+    candy_grid, jelly_grid = update_board(candy_grid, jelly_grid)
     print("gravity")
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")

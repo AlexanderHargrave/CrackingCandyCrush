@@ -311,6 +311,34 @@ def update_label(cell, new_label):
     if isinstance(cell, tuple):
         return (cell[0], new_label)
     return new_label
+def trigger_wrapped_explosions(grid, jelly_grid):
+    rows, cols = len(grid), len(grid[0])
+    explosion_triggered = False
+
+    surrounding = [(-1,-1), (-1,0), (-1,1),
+                   (0,-1),  (0,0),  (0,1),
+                   (1,-1),  (1,0),  (1,1)]
+
+    new_matches = set()
+
+    for r in range(rows):
+        for c in range(cols):
+            label = get_label(grid[r][c])
+            if label.startswith("explode_"):
+                explosion_triggered = True
+                color = label.replace("explode_", "")
+                for dr, dc in surrounding:
+                    nr, nc = r + dr, c + dc
+                    if is_valid_position(grid, nr, nc):
+                        new_matches.add((nr, nc))
+                # Clear the explode tile itself
+                grid[r][c] = update_label(grid[r][c], "empty")
+                jelly_grid = reduce_jelly_at(jelly_grid, r, c)
+
+    if new_matches:
+        grid, jelly_grid = clear_matches(grid, jelly_grid, new_matches)
+
+    return grid, jelly_grid, explosion_triggered
 def clear_matches(candy_grid, jelly_grid, matched_positions):
     """
     Enhanced clearing function with recursive cascading:
@@ -364,6 +392,8 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
                     wr, wc = r + dr, c + dc
                     if is_valid_position(candy_grid, wr, wc) and (wr, wc) not in processed:
                         to_process.add((wr, wc))
+                candy_grid[r][c] = update_label(label, f"explode_{base}")
+                jelly_grid = reduce_jelly_at(jelly_grid, r, c)
 
         # Bubblegum1 explosion triggers 3x3 clear around it
         if "bubblegum1" in base:
@@ -601,24 +631,34 @@ def apply_diagonal_gravity(grid):
 
     return grid, changed
 
-def update_board(grid):
-    changed = True
-    while changed:
-        changed = False
+def update_board(grid, jelly_grid):
+    while True:
+        # 1. Apply gravity and fill until stable
+        changed = True
+        while changed:
+            changed = False
+            grid, changed1 = apply_gravity(grid)
+            grid, filled1 = fill_grid_until_stable(grid)
+            grid, diag1 = apply_diagonal_gravity(grid)
+            grid, filled2 = fill_grid_until_stable(grid)
+            changed = changed1 or filled1 or diag1 or filled2
 
-        # Apply vertical gravity
-        grid, changed = apply_gravity(grid)
+        # 2. Trigger wrapped candy explosions if any
+        grid, jelly_grid, triggered = trigger_wrapped_explosions(grid, jelly_grid)
+        if triggered:
+            continue 
 
-        # Fill empty cells after vertical gravity
-        grid, updated = fill_grid_until_stable(grid)
-        changed = changed or updated
+        # 3. Check for new matches on the updated board
+        matches = find_all_matches(grid)
+        if matches:
+            
+            grid, jelly_grid = clear_matches(grid, jelly_grid, matches)
+            continue  
 
-        # Apply diagonal gravity
-        grid, diagonal_changed = apply_diagonal_gravity(grid)
-        changed = changed or diagonal_changed
+        # 4. No more matches or explosions — board is stable
+        break
 
-        # Fill again after diagonal movement
-        grid, updated2 = fill_grid_until_stable(grid)
-        changed = changed or updated2
+    return grid, jelly_grid
 
-    return grid
+
+
