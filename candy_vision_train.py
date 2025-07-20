@@ -23,7 +23,7 @@ import pytesseract
 import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
-from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid
+from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
 IMG_SIZE = 64
@@ -815,7 +815,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test2.png"
+    screenshot_path = "data/test/images/test3.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -878,6 +878,7 @@ if __name__ == "__main__":
     print(f"Moves Left: {moves_left}")
     # ===== GRID STRUCTURING =====
     grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
+    tracker = ObjectivesTracker()
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     moves = find_possible_moves(grid)
@@ -890,9 +891,11 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    grid, jelly_grid = apply_move(candy_grid, jelly_grid, moves[1][0][0], moves[1][0][1], moves[1][1][0], moves[1][1][1])
+    grid, jelly_grid = apply_move(candy_grid, jelly_grid, moves[0][0][0], moves[0][0][1], moves[0][1][0], moves[0][1][1], tracker = tracker)
     grid = merge_jelly_to_grid(grid, jelly_grid)
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
+    print(tracker.get_summary())
+
     
 
