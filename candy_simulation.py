@@ -34,11 +34,6 @@ def is_non_interactive(label):
     lowered = label.lower().replace(" ", "_")
     return any(x in lowered for x in ["liquorice", "dragon_egg"])
 
-def swap(grid, r1, c1, r2, c2):
-    """Swap two elements in a copy of the grid and return it."""
-    new_grid = [row.copy() for row in grid]
-    new_grid[r1][c1], new_grid[r2][c2] = new_grid[r2][c2], new_grid[r1][c1]
-    return new_grid
 
 def is_liquorice(label):
     if isinstance(label, tuple):
@@ -65,6 +60,11 @@ def is_bubblegum(label):
         label = label[1]
     return "bubblegum" in label.lower()
 
+def swap(grid, r1, c1, r2, c2):
+    """Swap two elements in a copy of the grid and return it."""
+    new_grid = [row.copy() for row in grid]
+    new_grid[r1][c1], new_grid[r2][c2] = new_grid[r2][c2], new_grid[r1][c1]
+    return new_grid
 def reduce_layer(label, base_name):
     """
     Returns reduced label (or 'empty' if level 1).
@@ -174,7 +174,6 @@ def find_possible_moves(grid):
         for c in range(cols):
             if not is_movable(grid[r][c]):
                 continue
-
             # Swap with right neighbor
             if is_valid_position(grid, r, c + 1) and is_movable(grid[r][c + 1]):
                 swapped = swap(grid, r, c, r, c + 1)
@@ -248,7 +247,7 @@ def merge_jelly_to_grid(candy_grid, jelly_grid):
             elif jelly_level == 2:
                 label += "_jelly2"
 
-            merged_grid[r][c] = (box, label) if box else label
+            merged_grid[r][c] = (box, label) if box is not None else label
 
     return merged_grid
 
@@ -375,6 +374,8 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
 
         label = candy_grid[r][c]
         base = base_label(label)
+        if base == "empty" or base == "gap" or "loader" in base:
+            continue
 
         # Special candy clearing logic
         if is_special_candy(base):
@@ -393,7 +394,6 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
                     if is_valid_position(candy_grid, wr, wc) and (wr, wc) not in processed:
                         to_process.add((wr, wc))
                 candy_grid[r][c] = update_label(label, f"explode_{base}")
-                jelly_grid = reduce_jelly_at(jelly_grid, r, c)
 
         # Bubblegum1 explosion triggers 3x3 clear around it
         if "bubblegum1" in base:
@@ -403,30 +403,31 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
                     to_process.add((nr, nc))
 
         # Check neighbors for marmalade, liquorice, frosting, bubblegum to affect
-        for dr, dc in cardinal:
-            nr, nc = r + dr, c + dc
-            if not is_valid_position(candy_grid, nr, nc):
-                continue
-            neighbor = candy_grid[nr][nc]
-            neighbor_base = base_label(neighbor)
+        if not (is_marmalade(base) or "frosting" in base or "bubblegum" in base or is_liquorice(base) or "dragonegg" in base):
+            for dr, dc in cardinal:
+                nr, nc = r + dr, c + dc
+                if not is_valid_position(candy_grid, nr, nc):
+                    continue
 
-            if is_liquorice(neighbor_base) or is_marmalade(neighbor_base):
-                if (nr, nc) not in processed:
+                neighbor = candy_grid[nr][nc]
+                neighbor_base = base_label(neighbor)
+
+                if is_marmalade(neighbor_base) or is_liquorice(neighbor_base):
                     to_process.add((nr, nc))
 
-            elif "frosting" in neighbor_base:
-                new_label = reduce_layer(neighbor_base, "frosting")
-                candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
+                elif "frosting" in neighbor_base:
+                    new_label = reduce_layer(neighbor_base, "frosting")
+                    candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
 
-            elif "bubblegum" in neighbor_base:
-                if "bubblegum1" in neighbor_base:
-                    # trigger 3x3 explosion around bubblegum1
-                    for dr2, dc2 in surrounding:
-                        br, bc = nr + dr2, nc + dc2
-                        if is_valid_position(candy_grid, br, bc) and (br, bc) not in processed:
-                            to_process.add((br, bc))
-                new_label = reduce_layer(neighbor_base, "bubblegum")
-                candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
+                elif "bubblegum" in neighbor_base:
+                    if "bubblegum1" in neighbor_base:
+                        # Only 3x3 explosion effect applies
+                        for dr2, dc2 in surrounding:
+                            br, bc = nr + dr2, nc + dc2
+                            if is_valid_position(candy_grid, br, bc) and (br, bc) not in processed:
+                                to_process.add((br, bc))
+                    new_label = reduce_layer(neighbor_base, "bubblegum")
+                    candy_grid[nr][nc] = update_label(candy_grid[nr][nc], new_label)
 
         # Chocolate bomb logic - clears all candies of most common color when cleared passively
         if "bomb" in base:
@@ -459,6 +460,11 @@ def clear_matches(candy_grid, jelly_grid, matched_positions):
         elif "lock" in name:
             name = name.replace("_lock", "")
             candy_grid[r][c] = update_label(candy_grid[r][c], name)
+        elif "dragonegg" in base:
+            below_r = r + 1
+            if "_lock" not in base and "_marmalade" not in base:
+                if below_r >= rows or is_empty(candy_grid[below_r][c]):
+                    candy_grid[r][c] = update_label(candy_grid[r][c], "empty")
         else:
             candy_grid[r][c] = update_label(candy_grid[r][c], 'empty')
 
@@ -659,6 +665,135 @@ def update_board(grid, jelly_grid):
         break
 
     return grid, jelly_grid
+def apply_swap(grid, r1, c1, r2, c2):
+    """
+    Swaps two positions and handles special candy interactions.
+    Returns:
+        - updated grid after applying transformations
+        - set of matched positions (for clear_matches)
+    """
+    rows, cols = len(grid), len(grid[0])
+    new_grid = [row.copy() for row in grid]
+    matched = set()
 
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
 
+    def norm_name(tile):
+        return normalize_candy_name(base_label(tile))
 
+    def get_special_suffix(label):
+        if isinstance(label, tuple):
+            label = label[1]
+        base = label.split('_')[0]
+        if len(base) > 1 and base[-1] in ['H', 'V', 'W', 'F']:
+            return base[-1]
+        return None
+
+    # Perform the swap
+    c1_label, c2_label = grid[r1][c1], grid[r2][c2]
+    #new_grid[r1][c1], new_grid[r2][c2] = c2_label, c1_label
+
+    is_choc1 = is_chocolate(c1_label)
+    is_choc2 = is_chocolate(c2_label)
+    is_spec1 = is_special_candy(base_label(c1_label))
+    is_spec2 = is_special_candy(base_label(c2_label))
+
+    # 🍫 Chocolate + Chocolate → clear entire board
+    if is_choc1 and is_choc2:
+        for r in range(rows):
+            for c in range(cols):
+                matched.add((r, c))
+        new_grid[r1][c1] = update_label(new_grid[r1][c1], "empty")
+        new_grid[r2][c2] = update_label(new_grid[r2][c2], "empty")
+
+    # 🍫 Chocolate + Special (H, V, W, F) → convert all candies of same color to special
+    elif (is_choc1 and is_spec2) or (is_choc2 and is_spec1):
+        choc_r, choc_c = (r1, c1) if is_choc1 else (r2, c2)
+        spec_tile = c2_label if is_choc1 else c1_label
+        color = normalize_candy_name(spec_tile)
+        suffix = get_special_suffix(spec_tile)
+
+        if color and suffix:
+            for r in range(rows):
+                for c in range(cols):
+                    if color in norm_name(new_grid[r][c]):
+                        new_grid[r][c] = update_label(new_grid[r][c], f"{color}{suffix}")
+        # Clear chocolate to avoid applying passive logic
+        new_grid[choc_r][choc_c] = update_label(new_grid[choc_r][choc_c], "empty")
+    elif (is_choc1 and not is_spec2) or (is_choc2 and not is_spec1):
+        
+        choc_r, choc_c = (r1, c1) if is_choc1 else (r2, c2)
+        norm_tile = c2_label if is_choc1 else c1_label
+        color = normalize_candy_name(norm_tile)
+        for r in range(rows):
+            for c in range(cols):
+                cell = new_grid[r][c]
+                if isinstance(cell, tuple):
+                    _, label = cell
+                else:
+                    label = cell
+                if color in label:
+                    matched.add((r, c))
+        new_grid[choc_r][choc_c] = update_label(new_grid[choc_r][choc_c], "empty")
+    # 🎯 Striped + Striped → mark the two tiles (clearing handled later)
+    elif is_spec1 and is_spec2:
+        s1 = get_special_suffix(c1_label)
+        s2 = get_special_suffix(c2_label)
+        if s1 in "VH" and s2 in "VH":
+            matched.add((r1, c1))
+            matched.add((r2, c2))
+        elif s1 == "W" and s2 == "W":
+            for center_r, center_c in [(r1, c1), (r2, c2)]:
+                for dr in range(-2, 3):
+                    for dc in range(-2, 3):
+                        rr, cc = center_r + dr, center_c + dc
+                        if 0 <= rr < rows and 0 <= cc < cols:
+                            matched.add((rr, cc))
+            new_grid[r1][c1] = update_label(new_grid[r1][c1], "empty")
+            new_grid[r2][c2] = update_label(new_grid[r2][c2], "empty")
+
+    # 🎁 Wrapped + Striped → cross 3 rows + columns centered on the wrapped
+    elif (is_spec1 and get_special_suffix(c1_label) == "W") or (is_spec2 and get_special_suffix(c2_label) == "W"):
+        wrap_r, wrap_c = (r1, c1) if get_special_suffix(c1_label) == "W" else (r2, c2)
+
+        # 3 rows centered on wrapped
+        for dr in [-1, 0, 1]:
+            rr = wrap_r + dr
+            if 0 <= rr < rows:
+                for c in range(cols):
+                    matched.add((rr, c))
+
+        # 3 cols centered on wrapped
+        for dc in [-1, 0, 1]:
+            cc = wrap_c + dc
+            if 0 <= cc < cols:
+                for r in range(rows):
+                    matched.add((r, cc))
+
+        # Clear the wrapper itself
+        new_grid[wrap_r][wrap_c] = update_label(new_grid[wrap_r][wrap_c], "empty")
+    new_grid[r1][c1], new_grid[r2][c2] = c2_label, c1_label
+    return new_grid, matched
+def apply_move(grid, jelly_grid, r1, c1, r2, c2):
+    """
+    Performs a swap, resolves special interactions, clears matches,
+    triggers updates like gravity and jelly, and returns final state.
+    
+    Returns:
+        updated_grid, updated_jelly_grid
+    """
+    # Step 1: Swap with special handling
+    grid, matched = apply_swap(grid, r1, c1, r2, c2)
+
+    # Step 2: If no matches, revert swap
+    if matched:
+        grid, jelly_grid = clear_matches(grid, jelly_grid, matched)
+
+    # Step 4: Trigger any wrapped explosions (like explode_blue)
+    grid, jelly_grid, _ = trigger_wrapped_explosions(grid, jelly_grid)
+
+    # Step 5: Gravity/cascade/etc.
+    grid, jelly_grid = update_board(grid, jelly_grid)
+
+    return grid, jelly_grid
