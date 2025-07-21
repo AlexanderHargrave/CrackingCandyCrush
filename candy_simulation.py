@@ -521,10 +521,6 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
         special_pos = detect_and_mark_special_candy(candy_grid, group)
         if special_pos:
             created_specials.append(special_pos)
-    if len(created_specials) > 0:
-        print(created_specials, candy_grid[created_specials[0][0]][created_specials[0][1]])
-    else:
-        print("No special candies created")
     to_process = set(matched_positions) | set(created_specials)
     while to_process:
         r, c = to_process.pop()

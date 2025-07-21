@@ -89,7 +89,7 @@ def hybrid_mcts(grid, jelly_grid, moves, objective_targets, max_depth=2, simulat
         temp_tracker = ObjectivesTracker()
 
         grid_after, jelly_after = apply_move(temp_grid, temp_jelly, r1, c1, r2, c2, tracker=temp_tracker)
-        node = MCTSNode(grid_after, jelly_after, temp_tracker, depth=1, move=((r1, c1), (r2, c2)))
+        node = MCTSNode(grid_after, jelly_after, temp_tracker, depth=max_depth, move=((r1, c1), (r2, c2)))
 
         for _ in range(simulations_per_move):
             expanded_moves = find_possible_moves(node.candy_grid)
