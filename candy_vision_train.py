@@ -24,6 +24,8 @@ import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
 from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker
+from optimal_move_selection import depth_based_simulation, monte_carlo_best_move
+from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
 IMG_SIZE = 64
@@ -815,7 +817,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test3.png"
+    screenshot_path = "data/test/images/test6.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -891,11 +893,23 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    grid, jelly_grid = apply_move(candy_grid, jelly_grid, moves[0][0][0], moves[0][0][1], moves[0][1][0], moves[0][1][1], tracker = tracker)
-    grid = merge_jelly_to_grid(grid, jelly_grid)
-    for i, row in enumerate(grid):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    print(tracker.get_summary())
+    
+    objective_targets = {label: int(number) for (_, label), (_, number) in zip(objective_classified, objective_numbers)}
+    best_depth_move, depth_score, depth_tracker = depth_based_simulation(
+        candy_grid, jelly_grid, objective_targets, depth=2
+    )
+
+    # 2. Run Hybrid MCTS with Pruning
+    best_mcts_move, mcts_score, mcts_tracker = hybrid_mcts(
+        candy_grid, jelly_grid, moves, objective_targets,
+        max_depth=2, simulations_per_move=5
+    )
+
+    # Print comparison
+    print("===== Move Strategy Comparison =====")
+    print(f"[Depth Search]   Move: {best_depth_move}, Estimated Score: {depth_score:.2f}, Tracker: {depth_tracker}")
+    # Now perform the move on the copied grid and print it out to show simulated outcome
+    print(f"[Hybrid MCTS]    Move: {best_mcts_move}, Estimated Score: {mcts_score:.2f}, Tracker: {mcts_tracker}")
 
     
 

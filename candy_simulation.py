@@ -1,6 +1,7 @@
 # candy_simulation.py
 import random
 import re
+from collections import defaultdict, deque
 class ObjectivesTracker:
     def __init__(self):
         self.counts = {
@@ -153,6 +154,7 @@ def reduce_layer(label, base_name, tracker = None):
                 tracker.on_frosting_destroyed()
             elif base_name == "bubblegum":
                 tracker.on_bubblegum_destroyed()
+                tracker.jelly_destroyed()
         return 'empty'
     if tracker:
         if base_name == "frosting":
@@ -423,6 +425,69 @@ def trigger_wrapped_explosions(grid, jelly_grid, tracker = None):
         grid, jelly_grid = clear_matches(grid, jelly_grid, new_matches, tracker)
 
     return grid, jelly_grid, explosion_triggered
+def group_connected_matches(candy_grid, matched_positions):
+    """Groups matched positions into connected sets of the same base color."""
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
+    visited = set()
+    groups = []
+
+    for pos in matched_positions:
+        if pos in visited:
+            continue
+        r0, c0 = pos
+        ref_color = normalize_candy_name(base_label(candy_grid[r0][c0]))
+
+        group = set()
+        queue = deque([pos])
+
+        while queue:
+            r, c = queue.popleft()
+            if (r, c) in visited:
+                continue
+            current_color = normalize_candy_name(base_label(candy_grid[r][c]))
+            if current_color != ref_color:
+                continue
+            visited.add((r, c))
+            group.add((r, c))
+
+            for dr, dc in [(-1,0),(1,0),(0,-1),(0,1)]:
+                nr, nc = r + dr, c + dc
+                if (nr, nc) in matched_positions and (nr, nc) not in visited:
+                    queue.append((nr, nc))
+        if group:
+            groups.append(group)
+    return groups
+
+def detect_and_mark_special_candy(candy_grid, group):
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
+    if len(group) < 4:
+        return None
+
+    rows = [r for r, _ in group]
+    cols = [c for _, c in group]
+    color = normalize_candy_name(base_label(candy_grid[next(iter(group))[0]][next(iter(group))[1]]))
+
+    is_horiz = len(set(rows)) == 1
+    is_vert = len(set(cols)) == 1
+
+    if len(group) >= 5 and (is_horiz or is_vert):
+        special = "bomb"
+    elif len(group) == 4 and is_horiz:
+        special = f"{color}V"
+    elif len(group) == 4 and is_vert:
+        special = f"{color}H"
+    elif len(group) >= 5:
+        special = f"{color}W"
+    else:
+        return None
+
+    # Pick a tile to be the special one (center of match or arbitrary)
+    r_sp, c_sp = sorted(group)[len(group)//2]
+    candy_grid[r_sp][c_sp] = update_label(candy_grid[r_sp][c_sp], special)
+    return (r_sp, c_sp)
+
 def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
     """
     Enhanced clearing function with recursive cascading:
@@ -450,7 +515,17 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
 
     to_process = set(matched_positions)
     processed = set()
-
+    match_groups = group_connected_matches(candy_grid, matched_positions)
+    created_specials = []
+    for group in match_groups:
+        special_pos = detect_and_mark_special_candy(candy_grid, group)
+        if special_pos:
+            created_specials.append(special_pos)
+    if len(created_specials) > 0:
+        print(created_specials, candy_grid[created_specials[0][0]][created_specials[0][1]])
+    else:
+        print("No special candies created")
+    to_process = set(matched_positions) | set(created_specials)
     while to_process:
         r, c = to_process.pop()
         if (r, c) in processed:
