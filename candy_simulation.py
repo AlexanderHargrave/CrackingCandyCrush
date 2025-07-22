@@ -57,6 +57,8 @@ class ObjectivesTracker:
             self.counts["purple"] += 1
         elif base_label == "orange":
             self.counts["orange"] += 1
+        elif base_label == "liquorice":
+            self.counts["liquorice"] += 1
     def pinball_destroyed(self):
         self.counts["gumball"] += 1
 
@@ -94,9 +96,9 @@ def is_movable(label):
     Returns True if the tile is a normal, swappable candy.
     Filters out frosting, marmalade, bubblegum, gap, loader, etc.
     """
+    
     if isinstance(label, tuple):
         label = label[1]
-
     lowered = label.lower()
     if any(x in lowered for x in ["frosting", "marmalade", "gap", "loader", "bubblegum", "empty", "lock", "pinball"]):
         return False
@@ -458,32 +460,49 @@ def group_connected_matches(candy_grid, matched_positions):
         if group:
             groups.append(group)
     return groups
+def is_L_or_T_shape(group):
+    from collections import defaultdict
 
+    row_counts = defaultdict(int)
+    col_counts = defaultdict(int)
+    for r, c in group:
+        row_counts[r] += 1
+        col_counts[c] += 1
+
+    # L or T shapes have:
+    # - at least one row and one column with ≥3 tiles
+    return (
+        any(count >= 3 for count in row_counts.values()) and
+        any(count >= 3 for count in col_counts.values()))
 def detect_and_mark_special_candy(candy_grid, group):
     def base_label(tile):
         return tile[1] if isinstance(tile, tuple) else tile
+
     if len(group) < 4:
         return None
 
+    group = list(group)
     rows = [r for r, _ in group]
     cols = [c for _, c in group]
-    color = normalize_candy_name(base_label(candy_grid[next(iter(group))[0]][next(iter(group))[1]]))
+    r0, c0 = group[0]
+    color = normalize_candy_name(base_label(candy_grid[r0][c0]))
 
     is_horiz = len(set(rows)) == 1
     is_vert = len(set(cols)) == 1
 
-    if len(group) >= 5 and (is_horiz or is_vert):
-        special = "bomb"
-    elif len(group) == 4 and is_horiz:
+    # Check for straight lines
+    if len(group) == 4 and is_horiz:
         special = f"{color}V"
     elif len(group) == 4 and is_vert:
         special = f"{color}H"
-    elif len(group) >= 5:
+    elif len(group) >= 5 and (is_horiz or is_vert):
+        special = "bomb"
+    elif is_L_or_T_shape(group):
         special = f"{color}W"
     else:
         return None
 
-    # Pick a tile to be the special one (center of match or arbitrary)
+    # Place special candy at the center or arbitrary position
     r_sp, c_sp = sorted(group)[len(group)//2]
     candy_grid[r_sp][c_sp] = update_label(candy_grid[r_sp][c_sp], special)
     return (r_sp, c_sp)
@@ -681,7 +700,7 @@ def apply_gravity(grid):
     return grid, updated
 
 def get_new_candy():
-    return random.choice(["red", "blue", "green", "purple", "orange"])
+    return ["red", "blue", "green", "purple", "orange"]
 
 def get_dispenser_candy(loader):
     """
@@ -719,36 +738,73 @@ def get_dispenser_candy(loader):
         dispense_choice.append("orangeF")
     if "egg" in loader:
         dispense_choice.append("dragonegg")
-    return random.choice(dispense_choice)
-
+    return dispense_choice
 def is_empty(cell):
     return cell is None or get_label(cell) == "empty"
-
+from copy import deepcopy
 def generate_and_fall_candies(grid):
     rows, cols = len(grid), len(grid[0])
     changed = False
+    base_colors = ["red", "blue", "green", "purple", "orange"]
 
     for c in range(cols):
         for r in range(rows):
-            cell = grid[r][c]
-            if is_empty(cell):
+            if is_empty(grid[r][c]):
                 above = None if r == 0 else grid[r - 1][c]
                 above_label = get_label(above) if above else "gap"
 
                 if r == 0 or "gap" in above_label or "loader" in above_label:
-                    # Generate new candy
+                    possible_colors = base_colors.copy()
                     if "loader" in above_label:
-                        new_candy = get_dispenser_candy(get_label(grid[r - 1][c]))
-                    else:
-                        new_candy = get_new_candy()
+                        possible_colors = get_dispenser_candy(above_label)
+                    safe_color = None
+
+                    for _ in range(5):
+                        if not possible_colors:
+                            break
+                        color = random.choice(possible_colors)
+                        if not isinstance(color, str):
+                            print("Invalid color selected:", color)
+                            possible_colors.remove(color)
+                            continue
+
+                        # simulate drop
+                        temp_grid = deepcopy(grid)
+                        fall_r = r
+                        while fall_r + 1 < rows and is_empty(temp_grid[fall_r + 1][c]):
+                            fall_r += 1
+                        temp_grid[fall_r][c] = color
+
+                        matches = find_all_matches(temp_grid)
+                        if not triggers_special_candy(temp_grid, matches):
+                            safe_color = color
+                            break
+                        else:
+                            possible_colors.remove(color)
+
+                    # Fallback
+                    if not isinstance(safe_color, str):
+                        safe_color = random.choice(base_colors)
+
+                    # Final assignment
                     fall_r = r
                     while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
                         fall_r += 1
-
-                    grid[fall_r][c] = update_label(grid[fall_r][c], new_candy )
+                    grid[fall_r][c] = update_label(grid[fall_r][c], safe_color)
                     changed = True
     return grid, changed
-
+def triggers_special_candy(grid, matched_positions):
+    groups = group_connected_matches(grid, matched_positions)
+    for group in groups:
+        rows = [r for r, _ in group]
+        cols = [c for _, c in group]
+        if len(group) >= 5:
+            return True  # Bomb or wrapped
+        if len(group) == 4 and (len(set(rows)) == 1 or len(set(cols)) == 1):
+            return True  # Striped
+        if is_L_or_T_shape(group):
+            return True  # Wrapped
+    return False
 def fill_grid_until_stable(grid):
     changed = True
     updated = 0
@@ -769,8 +825,10 @@ def generate_at_top(grid, col):
             if r == 0 or "gap" in above_label or "loader" in above_label:
                 if above_label == "loader":
                     new_candy = get_dispenser_candy(get_label(grid[r - 1][col]))
+                    new_candy = random.choice(new_candy)
                 else:
                     new_candy = get_new_candy()
+                    new_candy = random.choice(new_candy)
 
                 fall_r = r
                 while fall_r + 1 < rows and is_empty(grid[fall_r + 1][col]):

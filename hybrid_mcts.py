@@ -1,6 +1,6 @@
 import copy
 import random
-from candy_simulation import apply_move, merge_jelly_to_grid, extract_jelly_grid
+from candy_simulation import apply_move, merge_jelly_to_grid, extract_jelly_grid, find_possible_moves
 from candy_simulation import ObjectivesTracker
 from optimal_move_selection import evaluate_board
 from candy_simulation import find_possible_moves
@@ -92,10 +92,12 @@ def prune_moves_with_heuristics(moves, grid, jelly_grid, objectives):
     return top_moves
 
 
-def hybrid_mcts(grid, jelly_grid, moves, objective_targets, max_depth=2, simulations_per_move=5):
+def hybrid_mcts(grid, jelly_grid, objective_targets, max_depth=2, simulations_per_move=5):
+
     best_move = None
     best_score = float('-inf')
     best_tracker_summary = None
+    moves = find_possible_moves(grid)
     move_labels = [(a, b, grid[a[0]][a[1]], grid[b[0]][b[1]]) for a, b, _, _ in moves]
     pruned_moves = prune_moves_with_heuristics(move_labels, grid, jelly_grid,  objective_targets)
 

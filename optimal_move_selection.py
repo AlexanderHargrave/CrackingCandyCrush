@@ -88,3 +88,52 @@ def monte_carlo_best_move(grid, jelly_grid, objective_targets, simulations_per_m
             best_move = move[:2]
             best_tracker_summary = tracker_summary
     return best_move, best_score, best_tracker_summary
+def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_fn, max_steps=30, **strategy_kwargs):
+    """
+    Simulate a level by selecting the best move with a given strategy until objectives are complete or max steps reached.
+    
+    Args:
+        candy_grid: Initial candy grid.
+        jelly_grid: Initial jelly grid.
+        objective_targets: Dict of objectives and their required counts.
+        strategy_fn: A function that returns (best_move, score, tracker_summary)
+        max_steps: Max number of moves allowed before stopping.
+        **strategy_kwargs: Additional arguments passed to strategy_fn.
+
+    Returns:
+        steps_taken, final_tracker_summary, success (bool)
+    """
+    current_grid = copy.deepcopy(candy_grid)
+    current_jelly = copy.deepcopy(jelly_grid)
+    tracker = ObjectivesTracker()
+    steps_taken = 0
+
+    while steps_taken < max_steps:
+        possible_moves = find_possible_moves(current_grid)
+        if not possible_moves:
+            print("No more moves available.")
+            break
+
+        move, score, tracker_summary = strategy_fn(current_grid, current_jelly, objective_targets, **strategy_kwargs)
+        
+        if not move:
+            print("Strategy failed to find a move.")
+            break
+
+        r1, c1 = move[0]
+        r2, c2 = move[1]
+        current_grid, current_jelly = apply_move(current_grid, current_jelly, r1, c1, r2, c2, tracker=tracker)
+        steps_taken += 1
+
+        # Check completion
+        complete = True
+        for obj, required in objective_targets.items():
+            progress = tracker.get_summary().get(obj, 0)
+            if progress < required:
+                complete = False
+                break
+
+        if complete:
+            return steps_taken, tracker.get_summary(), True, current_grid
+
+    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly
