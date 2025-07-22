@@ -20,7 +20,7 @@ class MCTSNode:
     def is_terminal(self, max_depth):
         return self.depth >= max_depth
 
-    def expand(self, possible_moves, objective_targets):
+    def expand(self, possible_moves):
         for move in possible_moves:
             new_candy_grid = copy.deepcopy(self.candy_grid)
             new_jelly_grid = copy.deepcopy(self.jelly_grid)
@@ -44,30 +44,47 @@ class MCTSNode:
         self.total_score += score
 
 
-def prune_moves_with_heuristics(moves, grid, objectives):
+def prune_moves_with_heuristics(moves, grid, jelly_grid, objectives):
     """
     Removes low-value moves. Keep moves:
     - Near objective tiles
     - Affecting special candies
     - In top 80% of estimated value
     """
-    def heuristic_value(label):
+    def heuristic_value(r,c):
+        label = grid[r][c]
+        label = label[1] if isinstance(label, tuple) else label
+        label_suffix = label.split('_')
+        if label_suffix[-1] in ["H", "V", "W", "F"]:
+            label_suffix = label_suffix[-1]
+        else:
+            label_suffix = ""
+        candy_label = jelly_grid[r][c]
         val = 0
         for obj, urgency in objectives.items():
-            if obj in label:
-                val += urgency
+            if label in obj:
+                val += 5
+        if label_suffix in ["H", "V", "W", "F"]:
+            if obj == "striped" and (label_suffix == "H" or label_suffix == "V"):
+                val += 5
+            if obj == "bomb" and label_suffix == "W":
+                val += 5
+            if obj == "fish" and label_suffix == "F":
+                val += 5
+        if candy_label > 0:
+            val += 3
+            
         if any(s in label for s in ["H", "V", "W", "F"]):
-            val += 2
+            val += 3
         if "bomb" in label:
-            val += 3    
+            val += 5    
         return val
 
     scored = []
     for move in moves:
-        (_,_), (_,_), l1, l2 = move
-        score = heuristic_value(l1[1]) + heuristic_value(l2[1])
+        (r1,c1), (r2,c2), l1, l2 = move
+        score = heuristic_value(r1,c1) + heuristic_value(r2,c2)
         scored.append((score, move))
-
     scored.sort(reverse=True)
     top_moves = [m for score, m in scored if score > 0]
     if not top_moves:
@@ -80,7 +97,7 @@ def hybrid_mcts(grid, jelly_grid, moves, objective_targets, max_depth=2, simulat
     best_score = float('-inf')
     best_tracker_summary = None
     move_labels = [(a, b, grid[a[0]][a[1]], grid[b[0]][b[1]]) for a, b, _, _ in moves]
-    pruned_moves = prune_moves_with_heuristics(move_labels, grid, objective_targets)
+    pruned_moves = prune_moves_with_heuristics(move_labels, grid, jelly_grid,  objective_targets)
 
     for move in pruned_moves:
         (r1, c1), (r2, c2), _, _ = move
@@ -93,7 +110,7 @@ def hybrid_mcts(grid, jelly_grid, moves, objective_targets, max_depth=2, simulat
 
         for _ in range(simulations_per_move):
             expanded_moves = find_possible_moves(node.candy_grid)
-            node.expand(expanded_moves, objective_targets)
+            node.expand(expanded_moves)
             for child in node.children:
                 score = child.simulate(objective_targets)
                 child.backpropagate(score)
