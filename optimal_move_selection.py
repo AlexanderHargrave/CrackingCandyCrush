@@ -134,6 +134,6 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
                 break
 
         if complete:
-            return steps_taken, tracker.get_summary(), True, current_grid
+            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly
 
     return steps_taken, tracker.get_summary(), False, current_grid, current_jelly

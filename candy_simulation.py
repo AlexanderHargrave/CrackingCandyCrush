@@ -408,19 +408,17 @@ def trigger_wrapped_explosions(grid, jelly_grid, tracker = None):
                    (1,-1),  (1,0),  (1,1)]
 
     new_matches = set()
-
     for r in range(rows):
         for c in range(cols):
             label = get_label(grid[r][c])
-            if label.startswith("explode_"):
+            if "explode" in label:
                 explosion_triggered = True
-                color = label.replace("explode_", "")
                 for dr, dc in surrounding:
                     nr, nc = r + dr, c + dc
                     if is_valid_position(grid, nr, nc):
                         new_matches.add((nr, nc))
                 # Clear the explode tile itself
-                grid[r][c] = update_label(grid[r][c], "empty")
+                grid[r][c] = update_label(grid[r][c], "yellow")
                 jelly_grid = reduce_jelly_at(jelly_grid, r, c, tracker)
 
     if new_matches:
@@ -429,11 +427,10 @@ def trigger_wrapped_explosions(grid, jelly_grid, tracker = None):
     return grid, jelly_grid, explosion_triggered
 def group_connected_matches(candy_grid, matched_positions):
     """Groups matched positions into connected sets of the same base color."""
-    def base_label(tile):
-        return tile[1] if isinstance(tile, tuple) else tile
     visited = set()
     groups = []
-
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
     for pos in matched_positions:
         if pos in visited:
             continue
@@ -486,7 +483,8 @@ def detect_and_mark_special_candy(candy_grid, group):
     cols = [c for _, c in group]
     r0, c0 = group[0]
     color = normalize_candy_name(base_label(candy_grid[r0][c0]))
-
+    if color == "empty":
+        return None
     is_horiz = len(set(rows)) == 1
     is_vert = len(set(cols)) == 1
 
@@ -567,12 +565,12 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
                 for rr in range(rows):
                     if (rr, c) not in processed:
                         to_process.add((rr, c))
-            elif direction == 'W':  
+            elif direction == 'W':
                 for dr, dc in surrounding:
                     wr, wc = r + dr, c + dc
                     if is_valid_position(candy_grid, wr, wc) and (wr, wc) not in processed:
                         to_process.add((wr, wc))
-                candy_grid[r][c] = update_label(label, f"explode_{base}")
+                
 
         # Bubblegum1 explosion triggers 3x3 clear around it
         if "bubblegum1" in base:
@@ -635,13 +633,16 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
             box, name = label
         else:
             name = label
-
+        base = name.split('_')[0]
+        direction = base[-1] if len(base) > 1 else None
         if "marmalade" in name:
             name = name.replace("_marmalade", "")
             candy_grid[r][c] = update_label(candy_grid[r][c], name)
         elif "lock" in name:
             name = name.replace("_lock", "")
             candy_grid[r][c] = update_label(candy_grid[r][c], name)
+        elif direction == "W":
+            candy_grid[r][c] = update_label(candy_grid[r][c], "explode")
         elif "dragonegg" in base:
             below_r = r + 1
             if "_lock" not in base and "_marmalade" not in base:
@@ -745,53 +746,24 @@ from copy import deepcopy
 def generate_and_fall_candies(grid):
     rows, cols = len(grid), len(grid[0])
     changed = False
-    base_colors = ["red", "blue", "green", "purple", "orange"]
+    base_colors = get_new_candy()
 
     for c in range(cols):
         for r in range(rows):
             if is_empty(grid[r][c]):
+                fall_r = r
+                while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
+                    fall_r += 1
+
                 above = None if r == 0 else grid[r - 1][c]
                 above_label = get_label(above) if above else "gap"
+                if "loader" in above_label:
+                    color = random.choice(get_dispenser_candy(above_label))
+                else:
+                    color = random.choice(base_colors)
 
-                if r == 0 or "gap" in above_label or "loader" in above_label:
-                    possible_colors = base_colors.copy()
-                    if "loader" in above_label:
-                        possible_colors = get_dispenser_candy(above_label)
-                    safe_color = None
-
-                    for _ in range(5):
-                        if not possible_colors:
-                            break
-                        color = random.choice(possible_colors)
-                        if not isinstance(color, str):
-                            print("Invalid color selected:", color)
-                            possible_colors.remove(color)
-                            continue
-
-                        # simulate drop
-                        temp_grid = deepcopy(grid)
-                        fall_r = r
-                        while fall_r + 1 < rows and is_empty(temp_grid[fall_r + 1][c]):
-                            fall_r += 1
-                        temp_grid[fall_r][c] = color
-
-                        matches = find_all_matches(temp_grid)
-                        if not triggers_special_candy(temp_grid, matches):
-                            safe_color = color
-                            break
-                        else:
-                            possible_colors.remove(color)
-
-                    # Fallback
-                    if not isinstance(safe_color, str):
-                        safe_color = random.choice(base_colors)
-
-                    # Final assignment
-                    fall_r = r
-                    while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
-                        fall_r += 1
-                    grid[fall_r][c] = update_label(grid[fall_r][c], safe_color)
-                    changed = True
+                grid[fall_r][c] = update_label(grid[fall_r][c], color)
+                changed = True
     return grid, changed
 def triggers_special_candy(grid, matched_positions):
     groups = group_connected_matches(grid, matched_positions)
@@ -808,33 +780,57 @@ def triggers_special_candy(grid, matched_positions):
 def fill_grid_until_stable(grid):
     changed = True
     updated = 0
+    new_candies = set()
+
     while changed:
-        grid, changed = generate_and_fall_candies(grid)
+        rows, cols = len(grid), len(grid[0])
+        changed = False
+        for c in range(cols):
+            for r in range(rows):
+                if is_empty(grid[r][c]):
+                    fall_r = r
+                    while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
+                        fall_r += 1
+                    pos = (fall_r, c)
+                    new_candies.add(pos)
+                    above = None if r == 0 else grid[r - 1][c]
+                    above_label = get_label(above) if above else "gap"
+                    if "loader" in above_label:
+                        if random.random() < 0.8:
+                            color = random.choice(get_new_candy())
+                        else:
+                            color = random.choice(get_dispenser_candy(above_label))
+                    else:
+                        color = random.choice(get_new_candy())
+                    grid[fall_r][c] = update_label(grid[fall_r][c], color)
+
+                    changed = True
         updated += 1
-    if updated >= 2:
-        return grid, True
-    return grid, False
 
-def generate_at_top(grid, col):
-    rows = len(grid)
-    for r in range(rows):
-        if is_empty(grid[r][col]):
-            above = None if r == 0 else grid[r - 1][col]
-            above_label = get_label(above) if above else "gap"
+    return grid, updated >= 2, new_candies
+def scramble_until_no_specials(grid, new_candies):
+    base_colors = get_new_candy()
+    max_attempts = 5
 
-            if r == 0 or "gap" in above_label or "loader" in above_label:
-                if above_label == "loader":
-                    new_candy = get_dispenser_candy(get_label(grid[r - 1][col]))
-                    new_candy = random.choice(new_candy)
-                else:
-                    new_candy = get_new_candy()
-                    new_candy = random.choice(new_candy)
+    for _ in range(max_attempts):
+        matches = find_all_matches(grid)
+        if not triggers_special_candy(grid, matches):
+            return grid  # Done
 
-                fall_r = r
-                while fall_r + 1 < rows and is_empty(grid[fall_r + 1][col]):
-                    fall_r += 1
-                grid[fall_r][col] = update_label(grid[fall_r][col], new_candy)
-            break
+        # Check if any group triggering special includes newly generated tile
+        groups = group_connected_matches(grid, matches)
+        changed = False
+
+        for group in groups:
+            if triggers_special_candy(grid, group):
+                if any(pos in new_candies for pos in group):
+                    for r, c in group:
+                        if (r, c) in new_candies:
+                            grid[r][c] = update_label(grid[r][c], random.choice(base_colors))
+                            changed = True
+        if not changed:
+            break  # Avoid infinite loop
+    return grid
 
 def apply_diagonal_gravity(grid):
     rows, cols = len(grid), len(grid[0])
@@ -860,7 +856,7 @@ def apply_diagonal_gravity(grid):
                 grid[r + 1][c - 1] = curr
                 grid[r][c] = update_label(curr, "empty")
                 fall_column(c, r)
-                generate_at_top(grid, c)
+                #generate_at_top(grid, c)
                 changed = True
                 continue
 
@@ -869,7 +865,7 @@ def apply_diagonal_gravity(grid):
                 grid[r + 1][c + 1] = curr
                 grid[r][c] = update_label(curr, "empty")
                 fall_column(c, r)
-                generate_at_top(grid, c)
+                #generate_at_top(grid, c)
                 changed = True
 
     return grid, changed
@@ -881,14 +877,17 @@ def update_board(grid, jelly_grid, tracker = None):
         while changed:
             changed = False
             grid, changed1 = apply_gravity(grid)
-            grid, filled1 = fill_grid_until_stable(grid)
+            grid, filled1, new_candies = fill_grid_until_stable(grid)
+            grid = scramble_until_no_specials(grid, new_candies)
             grid, diag1 = apply_diagonal_gravity(grid)
-            grid, filled2 = fill_grid_until_stable(grid)
+            grid, filled2, new_candies = fill_grid_until_stable(grid)
+            grid = scramble_until_no_specials(grid, new_candies)
             changed = changed1 or filled1 or diag1 or filled2
 
         # 2. Trigger wrapped candy explosions if any
         grid, jelly_grid, triggered = trigger_wrapped_explosions(grid, jelly_grid, tracker)
         if triggered:
+            #print("triggered wrapped explosion")
             continue 
 
         # 3. Check for new matches on the updated board
@@ -1025,12 +1024,12 @@ def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
 
     # Step 2: If no matches, revert swap
     if matched:
-        grid, jelly_grid = clear_matches(grid, jelly_grid, matched, tracker)
+        grid, jelly_grid = clear_matches(grid, jelly_grid, matched, tracker = tracker)
 
     # Step 4: Trigger any wrapped explosions (like explode_blue)
-    grid, jelly_grid, _ = trigger_wrapped_explosions(grid, jelly_grid, tracker)
+    grid, jelly_grid, _ = trigger_wrapped_explosions(grid, jelly_grid, tracker = tracker)
 
     # Step 5: Gravity/cascade/etc.
-    grid, jelly_grid = update_board(grid, jelly_grid, tracker)
+    grid, jelly_grid = update_board(grid, jelly_grid, tracker =  tracker)
 
     return grid, jelly_grid
