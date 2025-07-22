@@ -39,7 +39,7 @@ def monte_carlo_score(grid, jelly_grid, move, objective_targets, simulations=5):
     for _ in range(simulations):
         g_copy, j_copy, tracker_summary = simulate_with_tracker(grid, jelly_grid, move, objective_targets)
         total_score += evaluate_board(tracker_summary, objective_targets)
-    return total_score / simulations
+    return total_score / simulations, tracker_summary
 
 
 def depth_based_simulation(grid, jelly_grid, objective_targets, depth=2):
@@ -80,9 +80,11 @@ def monte_carlo_best_move(grid, jelly_grid, objective_targets, simulations_per_m
     """
     best_move = None
     best_score = -float('inf')
+    best_tracker_summary = None
     for move in find_possible_moves(grid):
-        score = monte_carlo_score(grid, jelly_grid, move, objective_targets, simulations=simulations_per_move)
+        score, tracker_summary = monte_carlo_score(grid, jelly_grid, move, objective_targets, simulations=simulations_per_move)
         if score > best_score:
             best_score = score
-            best_move = move
-    return best_move, best_score
+            best_move = move[:2]
+            best_tracker_summary = tracker_summary
+    return best_move, best_score, best_tracker_summary

@@ -898,7 +898,8 @@ if __name__ == "__main__":
     best_depth_move, depth_score, depth_tracker = depth_based_simulation(
         candy_grid, jelly_grid, objective_targets, depth=2
     )
-
+    monte_carlo_move, monte_carlo_score, monte_carlo_tracker = monte_carlo_best_move(
+        candy_grid, jelly_grid, objective_targets,5)
     # 2. Run Hybrid MCTS with Pruning
     best_mcts_move, mcts_score, mcts_tracker = hybrid_mcts(
         candy_grid, jelly_grid, moves, objective_targets,
@@ -910,6 +911,7 @@ if __name__ == "__main__":
     print(f"[Depth Search]   Move: {best_depth_move}, Estimated Score: {depth_score:.2f}, Tracker: {depth_tracker}")
     # Now perform the move on the copied grid and print it out to show simulated outcome
     print(f"[Hybrid MCTS]    Move: {best_mcts_move}, Estimated Score: {mcts_score:.2f}, Tracker: {mcts_tracker}")
+    print(f"[Monte Carlo]    Move: {monte_carlo_move}, Estimated Score: {monte_carlo_score:.2f}, Tracker: {monte_carlo_tracker}")
 
     
 
