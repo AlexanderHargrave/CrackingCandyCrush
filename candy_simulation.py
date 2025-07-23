@@ -3,6 +3,7 @@ import random
 import re
 from collections import defaultdict, deque
 from copy import deepcopy
+from random import shuffle
 class ObjectivesTracker:
     def __init__(self):
         self.counts = {
@@ -497,6 +498,8 @@ def detect_and_mark_special_candy(candy_grid, group):
         special = f"{color}V"
     elif len(group) == 4 and is_vert:
         special = f"{color}H"
+    elif len(group) == 4 and len(set(rows)) == 2 and len(set(cols)) == 2:
+        special = f"{color}F"
     elif len(group) >= 5 and (is_horiz or is_vert):
         special = "bomb"
     elif is_L_or_T_shape(group):
@@ -523,6 +526,30 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
     def is_matchable(r, c):
         label = candy_grid[r][c]
         return is_movable(label) and not is_chocolate(label) and not is_non_interactive(label)
+    def spawn_fish_target(processed, to_process):
+        candidates = {'bubblegum': [], 'frosting': [], 'liquorice': [], 'jelly': [], 'fallback': []}
+        for r in range(rows):
+            for c in range(cols):
+                if (r, c) in processed or (r, c) in to_process:
+                    continue
+                tile = candy_grid[r][c]
+                base = base_label(tile)
+
+                if "bubblegum" in base:
+                    candidates['bubblegum'].append((r, c))
+                elif "frosting" in base:
+                    candidates['frosting'].append((r, c))
+                elif is_liquorice(base):
+                    candidates['liquorice'].append((r, c))
+                elif jelly_grid[r][c] > 0:
+                    candidates['jelly'].append((r, c))
+                else:
+                    candidates['fallback'].append((r, c))
+
+        for key in ['bubblegum', 'frosting', 'liquorice', 'jelly', 'fallback']:
+            if candidates[key]:
+                return random.choice(candidates[key])
+        return None
     rows, cols = len(candy_grid), len(candy_grid[0])
 
     # Directions for 4-neighbors and 3x3 area
@@ -574,6 +601,10 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
                     wr, wc = r + dr, c + dc
                     if is_valid_position(candy_grid, wr, wc) and (wr, wc) not in processed:
                         to_process.add((wr, wc))
+            elif direction == 'F':
+                target = spawn_fish_target(processed, to_process)
+                if target:
+                    to_process.add(target)
                 
 
         # Bubblegum1 explosion triggers 3x3 clear around it
@@ -711,7 +742,7 @@ def get_dispenser_candy(loader):
     Simulates candy dispenser logic based on loader position.
     Since dispenser logic is level dependent, for the purposes of this project it operates randomly.
     """
-    dispense_choice = ["red", "blue", "green", "purple", "orange"]
+    dispense_choice = []
     if "bomb" in loader:
         dispense_choice.append("redW")
         dispense_choice.append("blueW")
@@ -899,7 +930,7 @@ def update_board(grid, jelly_grid, tracker = None):
         break
 
     return grid, jelly_grid
-def apply_swap(grid, r1, c1, r2, c2):
+def apply_swap(grid, jelly_grid, r1, c1, r2, c2):
     """
     Swaps two positions and handles special candy interactions.
     Returns:
@@ -923,7 +954,30 @@ def apply_swap(grid, r1, c1, r2, c2):
         if len(base) > 1 and base[-1] in ['H', 'V', 'W', 'F']:
             return base[-1]
         return None
-    
+    def spawn_fish_target(processed, to_process):
+        candidates = {'bubblegum': [], 'frosting': [], 'liquorice': [], 'jelly': [], 'fallback': []}
+        for r in range(rows):
+            for c in range(cols):
+                if (r, c) in processed or (r, c) in to_process:
+                    continue
+                tile = grid[r][c]
+                base = base_label(tile)
+
+                if "bubblegum" in base:
+                    candidates['bubblegum'].append((r, c))
+                elif "frosting" in base:
+                    candidates['frosting'].append((r, c))
+                elif is_liquorice(base):
+                    candidates['liquorice'].append((r, c))
+                elif jelly_grid[r][c] > 0:
+                    candidates['jelly'].append((r, c))
+                else:
+                    candidates['fallback'].append((r, c))
+
+        for key in ['bubblegum', 'frosting', 'liquorice', 'jelly', 'fallback']:
+            if candidates[key]:
+                return random.choice(candidates[key])
+        return None
     # Perform the swap
     c1_label, c2_label = grid[r1][c1], grid[r2][c2]
     #new_grid[r1][c1], new_grid[r2][c2] = c2_label, c1_label
@@ -986,6 +1040,13 @@ def apply_swap(grid, r1, c1, r2, c2):
                             matched.add((rr, cc))
             new_grid[r1][c1] = update_label(new_grid[r1][c1], "empty")
             new_grid[r2][c2] = update_label(new_grid[r2][c2], "empty")
+        elif s1 == "F" and s2 == "F":
+            fish_targets = set()
+            for _ in range(3):
+                target = spawn_fish_target(fish_targets | matched, set())
+                if target:
+                    fish_targets.add(target)
+            matched |= fish_targets
 
     # 🎁 Wrapped + Striped → cross 3 rows + columns centered on the wrapped
     elif (is_spec1 and get_special_suffix(c1_label) == "W") or (is_spec2 and get_special_suffix(c2_label) == "W"):
@@ -1012,12 +1073,13 @@ def apply_swap(grid, r1, c1, r2, c2):
 def is_base_candy(label):
     # Add any other special candy labels if needed
     base_colors = ["red", "blue", "green", "purple", "orange"]
-    if any(label.startswith(color) for color in base_colors):
+    if any(color in label for color in base_colors):
         return True
     return False
 def reshuffle_candies(grid):
-    from random import shuffle
-
+    
+    def base_label(tile):
+        return tile[1] if isinstance(tile, tuple) else tile
     rows, cols = len(grid), len(grid[0])
     candy_positions = []
     candy_values = []
@@ -1035,7 +1097,9 @@ def reshuffle_candies(grid):
 
     # 3. Reassign shuffled candies to the same positions
     for idx, (r, c) in enumerate(candy_positions):
-        grid[r][c] = update_label(grid[r][c], candy_values[idx])
+        new_label = candy_values[idx]
+        new_label = base_label(new_label)
+        grid[r][c] = update_label(grid[r][c], new_label)
     return grid
 def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
     """
@@ -1046,7 +1110,7 @@ def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
         updated_grid, updated_jelly_grid
     """
     # Step 1: Swap with special handling
-    grid, matched = apply_swap(grid, r1, c1, r2, c2)
+    grid, matched = apply_swap(grid, jelly_grid, r1, c1, r2, c2)
 
     # Step 2: If no matches, revert swap
     if matched:

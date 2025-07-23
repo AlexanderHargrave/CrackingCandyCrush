@@ -140,7 +140,7 @@ def hybrid_mcts(grid, jelly_grid, objective_targets, max_depth=2, simulations_pe
 
     best_move = None
     best_score = float('-inf')
-    best_tracker_summary = None
+    best_tracker = None
     moves = find_possible_moves(grid)
     move_labels = [(a, b, grid[a[0]][a[1]], grid[b[0]][b[1]]) for a, b, _, _ in moves]
     pruned_moves = prune_moves_with_heuristics(move_labels, grid, jelly_grid,  objective_targets)
