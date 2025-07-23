@@ -915,33 +915,35 @@ if __name__ == "__main__":
     print(f"[Monte Carlo]    Move: {monte_carlo_move}, Estimated Score: {monte_carlo_score:.2f}, Tracker: {monte_carlo_tracker}")
     """
     # 3. Run Depth-based Simulation
-    steps_taken_depth, depth_tracker, completion, candy_grid1, jelly_grid1 = simulate_to_completion(candy_grid, jelly_grid, objective_targets, depth_based_simulation, depth = 2, max_steps = moves_left)
+    steps_taken_depth, depth_tracker, completion, candy_grid1, jelly_grid1, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, depth_based_simulation, depth = 2, max_steps = moves_left)
     print(f"\nDepth-based Simulation Steps: {steps_taken_depth}")
     print(f"Depth Tracker: {depth_tracker}")
     print(f"Completion Status: {completion}")
+    print(f"Score: {score}")
     for i, row in enumerate(candy_grid1):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid1):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
     # 4. Run Monte Carlo Simulation
-    steps_taken_monte_carlo, monte_carlo_tracker, completion, candy_grid2, jelly_grid2 = simulate_to_completion(candy_grid, jelly_grid, objective_targets, monte_carlo_best_move,simulations_per_move = 3, max_steps = moves_left)
+    steps_taken_monte_carlo, monte_carlo_tracker, completion, candy_grid2, jelly_grid2, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, monte_carlo_best_move,simulations_per_move = 3, max_steps = moves_left)
     print(f"\nMonte Carlo Simulation Steps: {steps_taken_monte_carlo}")
     print(f"Monte Carlo Tracker: {monte_carlo_tracker}")
     print(f"Completion Status: {completion}")
-
+    print(f"Score: {score}")
     for i, row in enumerate(candy_grid2):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid2):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
     # 5. Run Hybrid MCTS Simulation
-    steps_taken_mcts, mcts_tracker, completion, candy_grid3, jelly_grid3 = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = hybrid_mcts, max_depth=2, simulations_per_move=3, max_steps = moves_left)
+    steps_taken_mcts, mcts_tracker, completion, candy_grid3, jelly_grid3, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = hybrid_mcts, max_depth=3, simulations_per_move=3, max_steps = moves_left)
     print(f"\nHybrid MCTS Simulation Steps: {steps_taken_mcts}")    
     print(f"Hybrid MCTS Tracker: {mcts_tracker}")
     print(f"Completion Status: {completion}")
-
+    print(f"Score: {score}")
     for i, row in enumerate(candy_grid3):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid3):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+
     
 

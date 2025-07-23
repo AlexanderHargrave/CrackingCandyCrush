@@ -1,19 +1,36 @@
 import random
 import copy
 from candy_simulation import ObjectivesTracker
-from candy_simulation import find_possible_moves, apply_move, merge_jelly_to_grid
-
+from candy_simulation import find_possible_moves, apply_move, merge_jelly_to_grid, reshuffle_candies
 
 def evaluate_board(tracker_summary, objective_targets):
     """
-    Weighted evaluation score for the board based on objectives and urgency.
+    Weighted evaluation score for the board based on objectives, urgency, and indirect blocker progress.
     """
     score = 0
+
     for obj, required in objective_targets.items():
         progress = tracker_summary.get(obj, 0)
         remaining = max(required - progress, 0)
         urgency_weight = 1 + (1 / (remaining + 1))
-        score += progress * urgency_weight
+        score += progress * urgency_weight * 10  
+
+    blocker_weights = {
+        "frosting": 0.1,
+        "liquorice": 0.1,
+        "bubblegum": 0.1,
+    }
+
+    for blocker, weight in blocker_weights.items():
+        if blocker not in objective_targets:
+            cleared = tracker_summary.get(blocker, 0)
+            score += cleared * weight
+    if "dragonegg" in objective_targets:
+        score += tracker_summary.get("dragonegg_movement", 0) * 2  
+        score += tracker_summary.get("dragonegg", 0) * 10
+    if "glass" in objective_targets:
+        score += tracker_summary.get("glass", 0) * 2 
+
     return score
 
 
@@ -107,12 +124,18 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
     current_jelly = copy.deepcopy(jelly_grid)
     tracker = ObjectivesTracker()
     steps_taken = 0
-
+    
     while steps_taken < max_steps:
+        consecutive_shuffles = 0
         possible_moves = find_possible_moves(current_grid)
-        if not possible_moves:
-            print("No more moves available.")
-            break
+        while not possible_moves:
+            candy_grid = reshuffle_candies(candy_grid)
+            consecutive_shuffles += 1
+            if consecutive_shuffles > 2:
+                print("No more moves")
+                break
+            possible_moves = find_possible_moves(current_grid)
+            
 
         move, score, tracker_summary = strategy_fn(current_grid, current_jelly, objective_targets, **strategy_kwargs)
         
@@ -134,6 +157,6 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
                 break
 
         if complete:
-            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly
+            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, score
 
-    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly
+    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, score

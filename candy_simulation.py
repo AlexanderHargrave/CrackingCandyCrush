@@ -2,6 +2,7 @@
 import random
 import re
 from collections import defaultdict, deque
+from copy import deepcopy
 class ObjectivesTracker:
     def __init__(self):
         self.counts = {
@@ -19,6 +20,7 @@ class ObjectivesTracker:
             "glass": 0,
             "liquorice": 0,
             "gumball": 0,
+            "dragonegg_movement":0,
         }
 
     def update_on_clear(self, cell):
@@ -74,6 +76,8 @@ class ObjectivesTracker:
 
     def on_dragonegg_removed(self):
         self.counts["dragonegg"] += 1
+    def dragon_egg_movement(self, distance_travelled):
+        self.counts["dragonegg_movement"] += distance_travelled
 
     def get_summary(self):
         return dict(self.counts)
@@ -458,7 +462,7 @@ def group_connected_matches(candy_grid, matched_positions):
             groups.append(group)
     return groups
 def is_L_or_T_shape(group):
-    from collections import defaultdict
+
 
     row_counts = defaultdict(int)
     col_counts = defaultdict(int)
@@ -644,11 +648,7 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
         elif direction == "W":
             candy_grid[r][c] = update_label(candy_grid[r][c], "explode")
         elif "dragonegg" in base:
-            below_r = r + 1
-            if "_lock" not in base and "_marmalade" not in base:
-                if below_r >= rows or is_empty(candy_grid[below_r][c]):
-                    tracker.on_dragonegg_removed()
-                    candy_grid[r][c] = update_label(candy_grid[r][c], "empty")
+            pass
         elif "frosting" in base:
             new_label = reduce_layer(base, "frosting", tracker)
             if new_label == "empty":
@@ -673,7 +673,7 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
 def get_label(cell):
     return cell[1] if isinstance(cell, tuple) else cell
 
-def apply_gravity(grid):
+def apply_gravity(grid, tracker = None):
     """
     Applies gravity from top to bottom. If a movable candy has an empty space below,
     move it downward by transferring its label. Boxes (if any) are preserved.
@@ -694,6 +694,9 @@ def apply_gravity(grid):
                 below_label = get_label(below) if below is not None else "empty"
                 if below is None or "empty" in below_label:
                     # Move label downward
+                    if "dragonegg" in get_label(curr) and tracker:
+                        tracker.dragon_egg_movement(1)
+
                     grid[r + 1][c] = update_label(below if below else curr, get_label(curr))
                     grid[r][c] = update_label(curr, "empty")
                     changed = True
@@ -723,7 +726,7 @@ def get_dispenser_candy(loader):
         dispense_choice.append("greenV")
         dispense_choice.append("purpleV")
         dispense_choice.append("orangeV")
-    if "hoirzontal" in loader:
+    if "horizontal" in loader:
         dispense_choice.append("redH")
         dispense_choice.append("blueH")
         dispense_choice.append("greenH")
@@ -742,29 +745,7 @@ def get_dispenser_candy(loader):
     return dispense_choice
 def is_empty(cell):
     return cell is None or get_label(cell) == "empty"
-from copy import deepcopy
-def generate_and_fall_candies(grid):
-    rows, cols = len(grid), len(grid[0])
-    changed = False
-    base_colors = get_new_candy()
 
-    for c in range(cols):
-        for r in range(rows):
-            if is_empty(grid[r][c]):
-                fall_r = r
-                while fall_r + 1 < rows and is_empty(grid[fall_r + 1][c]):
-                    fall_r += 1
-
-                above = None if r == 0 else grid[r - 1][c]
-                above_label = get_label(above) if above else "gap"
-                if "loader" in above_label:
-                    color = random.choice(get_dispenser_candy(above_label))
-                else:
-                    color = random.choice(base_colors)
-
-                grid[fall_r][c] = update_label(grid[fall_r][c], color)
-                changed = True
-    return grid, changed
 def triggers_special_candy(grid, matched_positions):
     groups = group_connected_matches(grid, matched_positions)
     for group in groups:
@@ -796,9 +777,10 @@ def fill_grid_until_stable(grid):
                     above = None if r == 0 else grid[r - 1][c]
                     above_label = get_label(above) if above else "gap"
                     if "loader" in above_label:
-                        if random.random() < 0.8:
+                        if random.random() < 0.5:
                             color = random.choice(get_new_candy())
                         else:
+
                             color = random.choice(get_dispenser_candy(above_label))
                     else:
                         color = random.choice(get_new_candy())
@@ -832,7 +814,7 @@ def scramble_until_no_specials(grid, new_candies):
             break  # Avoid infinite loop
     return grid
 
-def apply_diagonal_gravity(grid):
+def apply_diagonal_gravity(grid, tracker = None):
     rows, cols = len(grid), len(grid[0])
     changed = False
 
@@ -840,6 +822,8 @@ def apply_diagonal_gravity(grid):
         # Pull candies down above stop_row
         for r in reversed(range(stop_row)):
             if is_movable(grid[r][col]) and is_empty(grid[r + 1][col]):
+                if "dragonegg" in get_label(grid[r][col]) and tracker:
+                    tracker.dragon_egg_movement(1)
                 grid[r + 1][col] = grid[r][col]
                 grid[r][col] = update_label(grid[r][col], "empty")
                 return True
@@ -869,21 +853,35 @@ def apply_diagonal_gravity(grid):
                 changed = True
 
     return grid, changed
-
+# Write a function to check the grid for dragon egg and if it's on the bottom row or right below it is gap, clear it
+def check_dragon_egg(grid, tracker = None):
+    rows, cols = len(grid), len(grid[0])
+    check = False
+    for c in range(cols):
+        for r in range(rows - 1, -1, -1):
+            if "dragonegg" in get_label(grid[r][c]):
+                if r == rows - 1 or (r < rows - 1 and get_label(grid[r + 1][c]) == "gap") and "marmalade" not in get_label(grid[r][c] and "lock" not in get_label(grid[r][c])):
+                    if tracker:
+                        tracker.on_dragonegg_removed()
+                    check = True
+                    grid[r][c] = update_label(grid[r][c], "empty")
+    return grid, check
 def update_board(grid, jelly_grid, tracker = None):
     while True:
         # 1. Apply gravity and fill until stable
         changed = True
         while changed:
             changed = False
-            grid, changed1 = apply_gravity(grid)
+            grid, changed1 = apply_gravity(grid, tracker)
             grid, filled1, new_candies = fill_grid_until_stable(grid)
             grid = scramble_until_no_specials(grid, new_candies)
-            grid, diag1 = apply_diagonal_gravity(grid)
+            grid, diag1 = apply_diagonal_gravity(grid, tracker)
             grid, filled2, new_candies = fill_grid_until_stable(grid)
             grid = scramble_until_no_specials(grid, new_candies)
             changed = changed1 or filled1 or diag1 or filled2
-
+        grid, check = check_dragon_egg(grid, tracker)
+        if check:
+            continue
         # 2. Trigger wrapped candy explosions if any
         grid, jelly_grid, triggered = trigger_wrapped_explosions(grid, jelly_grid, tracker)
         if triggered:
@@ -896,7 +894,7 @@ def update_board(grid, jelly_grid, tracker = None):
             
             grid, jelly_grid = clear_matches(grid, jelly_grid, matches, tracker)
             continue  
-
+        
         # 4. No more matches or explosions — board is stable
         break
 
@@ -1011,6 +1009,34 @@ def apply_swap(grid, r1, c1, r2, c2):
         new_grid[wrap_r][wrap_c] = update_label(new_grid[wrap_r][wrap_c], "empty")
     
     return new_grid, matched
+def is_base_candy(label):
+    # Add any other special candy labels if needed
+    base_colors = ["red", "blue", "green", "purple", "orange"]
+    if any(label.startswith(color) for color in base_colors):
+        return True
+    return False
+def reshuffle_candies(grid):
+    from random import shuffle
+
+    rows, cols = len(grid), len(grid[0])
+    candy_positions = []
+    candy_values = []
+
+    # 1. Collect all normal candy tiles
+    for r in range(rows):
+        for c in range(cols):
+            label = get_label(grid[r][c])
+            if is_base_candy(label):  # custom function, defined below
+                candy_positions.append((r, c))
+                candy_values.append(grid[r][c])
+
+    # 2. Shuffle candy tiles
+    shuffle(candy_values)
+
+    # 3. Reassign shuffled candies to the same positions
+    for idx, (r, c) in enumerate(candy_positions):
+        grid[r][c] = update_label(grid[r][c], candy_values[idx])
+    return grid
 def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
     """
     Performs a swap, resolves special interactions, clears matches,
