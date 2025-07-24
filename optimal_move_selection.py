@@ -44,6 +44,7 @@ def simulate_with_tracker(grid, jelly_grid, move, objective_targets):
     move = move[:2]
     (r1, c1), (r2, c2) = move
     grid_copy, jelly_copy = apply_move(grid_copy, jelly_copy, r1, c1, r2, c2, tracker=tracker)
+
     grid_copy = merge_jelly_to_grid(grid_copy, jelly_copy)
     return grid_copy, jelly_copy, tracker.get_summary()
 
@@ -67,6 +68,14 @@ def depth_based_simulation(grid, jelly_grid, objective_targets, depth=2):
         if depth_left == 0:
             return 0
         best_score = -float('inf')
+        moves = find_possible_moves(g)
+        shuffle_count = 0
+        while not moves:
+            if shuffle_count > 3:
+                return -float('inf')
+            g = reshuffle_candies(g)
+            shuffle_count += 1
+            moves = find_possible_moves(g)
         for move in find_possible_moves(g):
             g_copy, j_copy, tracker_summary = simulate_with_tracker(g, j, move, objective_targets)
             immediate_score = evaluate_board(tracker_summary, objective_targets)
@@ -98,6 +107,15 @@ def monte_carlo_best_move(grid, jelly_grid, objective_targets, simulations_per_m
     best_move = None
     best_score = -float('inf')
     best_tracker_summary = None
+    shuffle_count = 0
+    moves = find_possible_moves(grid)
+    while not moves:
+        if shuffle_count > 3:
+            print("No more moves available after shuffling.")
+            return None, best_score, best_tracker_summary
+        grid = reshuffle_candies(grid)
+        shuffle_count += 1
+        moves = find_possible_moves(grid)
     for move in find_possible_moves(grid):
         score, tracker_summary = monte_carlo_score(grid, jelly_grid, move, objective_targets, simulations=simulations_per_move)
         if score > best_score:
@@ -128,14 +146,14 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
     while steps_taken < max_steps:
         consecutive_shuffles = 0
         possible_moves = find_possible_moves(current_grid)
-        while not possible_moves:
-            candy_grid = reshuffle_candies(candy_grid)
-            consecutive_shuffles += 1
-            if consecutive_shuffles > 2:
+        while len(possible_moves) == 0:
+            if consecutive_shuffles > 5:
                 print("No more moves")
                 break
-            possible_moves = find_possible_moves(current_grid)
+            current_grid = reshuffle_candies(current_grid)
+            consecutive_shuffles += 1
             
+            possible_moves = find_possible_moves(current_grid)
 
         move, score, tracker_summary = strategy_fn(current_grid, current_jelly, objective_targets, **strategy_kwargs)
         

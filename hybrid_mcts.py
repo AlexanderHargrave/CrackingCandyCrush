@@ -122,6 +122,9 @@ def prune_moves_with_heuristics(moves, grid, jelly_grid, objectives):
         if "bomb" in objectives:
             if suffix in ["W"]:
                 score += 2
+        if "fish" in objectives:
+            if suffix in ["F"]:
+                score += 2
         if "bomb" in base:
             score += 5
         return score
