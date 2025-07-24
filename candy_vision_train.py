@@ -23,7 +23,7 @@ import pytesseract
 import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
-from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker
+from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker, infer_hidden_jelly_layers
 from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion
 from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
@@ -817,7 +817,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 if __name__ == "__main__":
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test7.png"
+    screenshot_path = "data/test/images/test11.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -891,10 +891,12 @@ if __name__ == "__main__":
     candy_grid, jelly_grid = extract_jelly_grid(grid)
     for i, row in enumerate(candy_grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+    
     
     objective_targets = {label: int(number) for (_, label), (_, number) in zip(objective_classified, objective_numbers)}
+    jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
+    for i, row in enumerate(jelly_grid):
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
     """
     best_depth_move, depth_score, depth_tracker = depth_based_simulation(
         candy_grid, jelly_grid, objective_targets, depth=2

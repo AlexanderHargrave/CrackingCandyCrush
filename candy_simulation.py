@@ -161,7 +161,6 @@ def reduce_layer(label, base_name, tracker = None):
                 tracker.on_frosting_destroyed()
             elif base_name == "bubblegum":
                 tracker.on_bubblegum_destroyed()
-                tracker.jelly_destroyed()
         return 'empty'
     if tracker:
         if base_name == "frosting":
@@ -1123,3 +1122,33 @@ def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
     grid, jelly_grid = update_board(grid, jelly_grid, tracker =  tracker)
 
     return grid, jelly_grid
+
+def infer_hidden_jelly_layers(grid, jelly_grid, objective_targets):
+    """
+    Infers how many jelly layers are hidden under bubblegum by comparing
+    the jelly count to the 'glass' objective.
+
+    Returns:
+        hidden_jelly_grid: 2D grid of 0, 1, or 2 indicating jelly layers under each tile
+    """
+    rows, cols = len(grid), len(grid[0])
+    visible_jelly_count = sum(1 for row in jelly_grid for cell in row if cell)
+    bubblegum_tiles = [(r, c) for r in range(rows) for c in range(cols)
+                       if normalize_candy_name(grid[r][c])[:9] == 'bubblegum']
+
+    bubblegum_count = len(bubblegum_tiles)
+    glass_target = objective_targets.get("glass", 0)
+
+    hidden_jelly_per_tile = 0
+    if visible_jelly_count + bubblegum_count >= glass_target:
+        hidden_jelly_per_tile = 1
+    elif visible_jelly_count + 2 * bubblegum_count == glass_target:
+        hidden_jelly_per_tile = 2
+    else:
+        # Fallback: estimate how many layers are needed per tile
+        hidden_jelly_per_tile = 2
+
+    for r, c in bubblegum_tiles:
+        jelly_grid[r][c] = jelly_grid[r][c] + hidden_jelly_per_tile
+
+    return jelly_grid
