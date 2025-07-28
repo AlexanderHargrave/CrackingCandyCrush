@@ -2,7 +2,8 @@ import random
 import copy
 from candy_simulation import ObjectivesTracker
 from candy_simulation import find_possible_moves, apply_move, merge_jelly_to_grid, reshuffle_candies
-
+import numpy as np
+import heapq
 def evaluate_board(tracker_summary, objective_targets):
     """
     Weighted evaluation score for the board based on objectives, urgency, and indirect blocker progress.
@@ -178,3 +179,115 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
             return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, score
 
     return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, score
+
+def expectimax(grid, jelly_grid, objective_targets, depth=2):
+    def expectimax_rec(g, j, tracker, curr_depth, is_max_node):
+        if curr_depth == 0:
+            return evaluate_board(tracker.get_summary(), objective_targets)
+
+        if is_max_node:
+            max_score = float('-inf')
+            moves = find_possible_moves(g)
+            if not moves:
+                return evaluate_board(tracker.get_summary(), objective_targets)
+            for move in moves:
+                (r1, c1), (r2, c2), *_ = move
+                g_copy = copy.deepcopy(g)
+                j_copy = copy.deepcopy(j)
+                tracker_copy = copy.deepcopy(tracker)
+                new_g, new_j = apply_move(g_copy, j_copy, r1, c1, r2, c2, tracker=tracker_copy)
+                score = expectimax_rec(new_g, new_j, tracker_copy, curr_depth - 1, False)
+                max_score = max(max_score, score)
+            return max_score
+        else:
+            # Chance node: sample a few random outcomes and average them
+            samples = 3
+            total = 0
+            for _ in range(samples):
+                g_copy = copy.deepcopy(g)
+                j_copy = copy.deepcopy(j)
+                tracker_copy = copy.deepcopy(tracker)
+                random_moves = find_possible_moves(g_copy)
+                if not random_moves:
+                    total += evaluate_board(tracker_copy.get_summary(), objective_targets)
+                    continue
+                move = random.choice(random_moves)
+                (r1, c1), (r2, c2), *_ = move
+                new_g, new_j = apply_move(g_copy, j_copy, r1, c1, r2, c2, tracker=tracker_copy)
+                score = expectimax_rec(new_g, new_j, tracker_copy, curr_depth - 1, True)
+                total += score
+            return total / max(1, samples)
+
+    # Main loop to select the best move
+    best_move = None
+    best_score = float('-inf')
+    best_summary = {}
+    possible_moves = find_possible_moves(grid)
+
+    for move in possible_moves:
+        (r1, c1), (r2, c2), *_ = move
+        g_copy = copy.deepcopy(grid)
+        j_copy = copy.deepcopy(jelly_grid)
+        tracker = ObjectivesTracker()
+        new_g, new_j = apply_move(g_copy, j_copy, r1, c1, r2, c2, tracker=tracker)
+        score = expectimax_rec(new_g, new_j, tracker, depth - 1, False)
+        if score > best_score:
+            best_score = score
+            best_move = ((r1, c1), (r2, c2))
+            best_summary = tracker.get_summary()
+
+    return best_move, best_score, best_summary
+
+def heuristic_score(tracker, objective_targets):
+    """
+    Basic heuristic score that can be expanded.
+    """
+    summary = tracker.get_summary()
+    return evaluate_board(summary, objective_targets)
+
+
+def heuristics_softmax_best_move(grid, jelly_grid, objective_targets, temperature=1.0, top_k=3):
+    """
+    Chooses a move based on softmax over heuristic scores.
+    
+    Parameters:
+        temperature (float): Controls exploration (higher is more random).
+        top_k (int or None): If set, limits sampling to top-k scored moves.
+    
+    Returns:
+        (move), score, summary
+    """
+    moves = find_possible_moves(grid)
+    if not moves:
+        return None, -float('inf'), {}
+
+    scored_moves = []
+    for move in moves:
+        (r1, c1), (r2, c2), *_ = move
+        g_copy = copy.deepcopy(grid)
+        j_copy = copy.deepcopy(jelly_grid)
+        tracker = ObjectivesTracker()
+        apply_move(g_copy, j_copy, r1, c1, r2, c2, tracker=tracker)
+        score = heuristic_score(tracker, objective_targets)
+        scored_moves.append(((r1, c1), (r2, c2), score, tracker.get_summary()))
+
+    # Extract raw scores
+    raw_scores = np.array([s[2] for s in scored_moves], dtype=np.float64)
+    
+    # Softmax with numerical stability
+    stabilized_scores = raw_scores - np.max(raw_scores)
+    exp_scores = np.exp(stabilized_scores / max(temperature, 1e-8))
+    probs = exp_scores / (np.sum(exp_scores) + 1e-8)
+
+    # Apply top-k filtering if needed
+    if top_k is not None and top_k < len(scored_moves):
+        # Sort by score and select top-k
+        top_indices = np.argsort(raw_scores)[-top_k:]
+        top_probs = probs[top_indices]
+        top_probs /= np.sum(top_probs)
+        chosen_index = np.random.choice(top_indices, p=top_probs)
+    else:
+        chosen_index = np.random.choice(len(scored_moves), p=probs)
+
+    chosen = scored_moves[chosen_index]
+    return (chosen[0], chosen[1]), chosen[2], chosen[3]

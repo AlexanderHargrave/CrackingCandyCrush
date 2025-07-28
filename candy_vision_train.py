@@ -2,6 +2,8 @@ import os
 import torch
 import torch.nn as nn
 import numpy as np
+import seaborn as sns
+import pandas as pd
 import torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data import DataLoader
@@ -24,7 +26,7 @@ import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
 from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker, infer_hidden_jelly_layers
-from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion
+from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax
 from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
@@ -813,11 +815,160 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
             print(f"{task_name.title()} Accuracy: {acc:.2f}%")
 
     return models_list, class_names
+def run_move_selection_experiment(skip_existing_results=True):
+    output_csv_path = "simulation_results.csv"
+    graph_dir = "graphs/move_selection"
+    os.makedirs(graph_dir, exist_ok=True)
 
+    if skip_existing_results and os.path.exists(output_csv_path):
+        print(f"🟡 Skipping simulation (existing results found at {output_csv_path})")
+        df = pd.read_csv(output_csv_path)
+    else:
+        print("🔁 Running full simulation for move selection strategies...")
+
+        # === STRATEGIES ===
+        strategies = {
+            "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
+            "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
+            "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=3, simulations_per_move=3, **kwargs),
+            "expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
+            "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
+        }
+
+        screenshot_names = ["test1", "test5", "test6", "test7", "test11", "test12","test14","test16","test24","test26"]
+        num_runs = 5
+        results = []
+
+        yolo_model_path = "runs/detect/train7/weights/best.pt"
+        data_dir = "candy_dataset"
+        sample_eval_size = 1
+        num_epochs = 50
+
+        model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
+        short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+
+        # Load classification models
+        candy_models, candy_class_names = load_models_for_task("candy", data_dir, model_names, num_epochs, "candy", sample_eval_size)
+        objective_models, objective_class_names = load_models_for_task("objective", "objectives", short_model_names, num_epochs, "objective", sample_eval_size)
+        loader_models, loader_class_names = load_models_for_task("loader", "loader", short_model_names, num_epochs, "loader", sample_eval_size)
+
+        # Extract color ranges
+        range1 = extract_unique_colors("jelly_levels/one_jelly")
+        range2 = extract_unique_colors("jelly_levels/two_jelly")
+        range3 = extract_unique_colors("jelly_levels/marmalade")
+        range4 = extract_unique_colors("jelly_levels/zero_jelly")
+
+        for screenshot_name in tqdm(screenshot_names, desc="Simulating Screenshots"):
+            screenshot_path = f"data/test/images/{screenshot_name}.png"
+            candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
+
+            candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3=range3, range4=range4)
+            gap_classified = [(box, "gap") for box, _ in gap_box]
+            objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
+            loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
+            objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
+
+            moves_left = int(detect_moves(screenshot_path))
+            grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified)
+            candy_grid, jelly_grid = extract_jelly_grid(grid)
+
+            objective_targets = {label: int(number) for (_, label), (_, number) in zip(objective_classified, objective_numbers)}
+            jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
+
+            for run_index in range(1, num_runs + 1):
+                for strategy_name, strategy_fn in strategies.items():
+                    try:
+                        steps_taken, _, completion, *_ = strategy_fn(
+                            candy_grid=candy_grid,
+                            jelly_grid=jelly_grid,
+                            objective_targets=objective_targets,
+                            max_steps=moves_left
+                        )
+                        results.append({
+                            "image": screenshot_name,
+                            "run": run_index,
+                            "strategy": strategy_name,
+                            "moves_taken": steps_taken,
+                            "completed": completion
+                        })
+                    except Exception as e:
+                        results.append({
+                            "image": screenshot_name,
+                            "run": run_index,
+                            "strategy": strategy_name,
+                            "moves_taken": -1,
+                            "completed": False,
+                            "error": str(e)
+                        })
+
+        # Save results
+        results_df = pd.DataFrame(results)
+        results_df.to_csv(output_csv_path, index=False)
+        print(f"\n✅ Saved simulation results to {output_csv_path}")
+        df = results_df
+
+            # === ANALYSIS ===
+            # Filter out runs with errors or invalid move counts
+        df = df[df["moves_taken"] >= 0]
+
+        # === SUMMARY METRICS ===
+
+        # Only use completed runs to compute avg_moves
+        completed_df = df[df["completed"] == True]
+
+        # Compute summary (only completed runs for avg_moves, all for completion rate)
+        avg_moves_summary = completed_df.groupby("strategy").agg(
+            avg_moves=("moves_taken", "mean"),
+            total_moves=("moves_taken", "sum"),
+        ).reset_index()
+
+        completion_summary = df.groupby("strategy").agg(
+            completion_rate=("completed", "mean"),
+            runs=("completed", "count"),
+            completions=("completed", "sum")
+        ).reset_index()
+
+        summary = pd.merge(avg_moves_summary, completion_summary, on="strategy")
+        summary["completion_rate"] = (summary["completion_rate"] * 100).round(2)
+
+        print("\n=== ✅ Overall Strategy Comparison ===")
+        print(summary.sort_values(by="completion_rate", ascending=False))
+
+        # === PER-IMAGE BREAKDOWN ===
+        per_image = df.groupby(["image", "strategy"]).agg(
+            avg_moves=("moves_taken", lambda x: round(x[df.loc[x.index, "completed"] == True].mean(), 2)),
+            completion_rate=("completed", lambda x: round(100 * x.mean(), 2))
+        ).reset_index()
+
+        print("\n=== 📊 Per-Image Strategy Breakdown ===")
+        print(per_image)
+
+        # === PLOTS ===
+        move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
+        completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
+
+        plt.figure(figsize=(10, 6))
+        summary.sort_values("avg_moves").plot.bar(x="strategy", y="avg_moves", legend=False)
+        plt.title("Average Moves Taken per Strategy (Only Completed Runs)")
+        plt.ylabel("Average Moves")
+        plt.tight_layout()
+        plt.savefig(move_plot_path)
+        plt.close()
+        print(f"📈 Saved plot: {move_plot_path}")
+
+        plt.figure(figsize=(10, 6))
+        summary.sort_values("completion_rate").plot.bar(x="strategy", y="completion_rate", legend=False)
+        plt.title("Completion Rate per Strategy (%)")
+        plt.ylabel("Completion Rate (%)")
+        plt.tight_layout()
+        plt.savefig(completion_plot_path)
+        plt.close()
+        print(f"📈 Saved plot: {completion_plot_path}")
 if __name__ == "__main__":
+    
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test11.png"
+    screenshot_path = "data/test/images/test24.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -884,7 +1035,6 @@ if __name__ == "__main__":
     for i, row in enumerate(grid):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     moves = find_possible_moves(grid)
-
     print("\nPossible moves:")
     for ((r1, c1), (r2, c2), c1_label, c2_label) in moves:
         print(f"Swap ({r1}, {c1}) [{c1_label[1]}] with ({r2}, {c2}) [{c2_label[1]}]")
@@ -945,6 +1095,24 @@ if __name__ == "__main__":
     for i, row in enumerate(candy_grid3):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid3):
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+    steps_taken_expectimax, expectimax_tracker, completion, candy_grid5, jelly_grid5, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = expectimax, max_steps = moves_left)
+    print(f"\nExpectimax Simulation Steps: {steps_taken_expectimax}")
+    print(f"Expectimax Tracker: {expectimax_tracker}")
+    print(f"Completion Status: {completion}")
+    print(f"Score: {score}")
+    for i, row in enumerate(candy_grid5):
+        print(f"Row {i + 1}: {[label for _, label in row]}")
+    for i, row in enumerate(jelly_grid5):
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+    steps_taken_softmax, softmax_tracker, completion, candy_grid6, jelly_grid6, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = heuristics_softmax_best_move, max_steps = moves_left)
+    print(f"\nSoftmax Heuristic Simulation Steps: {steps_taken_softmax}")
+    print(f"Softmax Heuristic Tracker: {softmax_tracker}")
+    print(f"Completion Status: {completion}")
+    print(f"Score: {score}")
+    for i, row in enumerate(candy_grid6):
+        print(f"Row {i + 1}: {[label for _, label in row]}")
+    for i, row in enumerate(jelly_grid6):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
 
     

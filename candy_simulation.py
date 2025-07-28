@@ -581,6 +581,14 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
             if "empty" in base:
                 jelly_grid = reduce_jelly_at(jelly_grid, r, c, tracker)
             continue
+        if "marmalade" in base:
+            name = base.replace("_marmalade", "")
+            candy_grid[r][c] = update_label(candy_grid[r][c], name)
+            continue
+        elif "lock" in base:
+            name = base.replace("_lock", "")
+            candy_grid[r][c] = update_label(candy_grid[r][c], name)
+            continue
         if tracker:
             tracked_label = base.split('_')[0]
             tracker.update_on_clear(tracked_label)
@@ -669,13 +677,8 @@ def clear_matches(candy_grid, jelly_grid, matched_positions, tracker = None):
             name = label
         base = name.split('_')[0]
         direction = base[-1] if len(base) > 1 else None
-        if "marmalade" in name:
-            name = name.replace("_marmalade", "")
-            candy_grid[r][c] = update_label(candy_grid[r][c], name)
-        elif "lock" in name:
-            name = name.replace("_lock", "")
-            candy_grid[r][c] = update_label(candy_grid[r][c], name)
-        elif direction == "W":
+
+        if direction == "W":
             candy_grid[r][c] = update_label(candy_grid[r][c], "explode")
         elif "dragonegg" in base:
             pass
@@ -1125,30 +1128,39 @@ def apply_move(grid, jelly_grid, r1, c1, r2, c2, tracker = None):
 
 def infer_hidden_jelly_layers(grid, jelly_grid, objective_targets):
     """
-    Infers how many jelly layers are hidden under bubblegum by comparing
-    the jelly count to the 'glass' objective.
+    Infers how many jelly layers are hidden under bubblegum or marmalade by comparing
+    the visible jelly count to the 'glass' objective target.
 
     Returns:
-        hidden_jelly_grid: 2D grid of 0, 1, or 2 indicating jelly layers under each tile
+        jelly_grid: Updated 2D grid with estimated hidden jelly layers under covered tiles.
     """
     rows, cols = len(grid), len(grid[0])
     visible_jelly_count = sum(1 for row in jelly_grid for cell in row if cell)
-    bubblegum_tiles = [(r, c) for r in range(rows) for c in range(cols)
-                       if normalize_candy_name(grid[r][c])[:9] == 'bubblegum']
 
-    bubblegum_count = len(bubblegum_tiles)
+    # Identify tiles covered by bubblegum or marmalade
+    covered_tiles = []
+    for r in range(rows):
+        for c in range(cols):
+            name = grid[r][c]
+            if isinstance(name, tuple):
+                name = name[1]
+            if "bubblegum" in name or "marmalade" in name:
+                covered_tiles.append((r, c))
+
+    covered_count = len(covered_tiles)
     glass_target = objective_targets.get("glass", 0)
 
     hidden_jelly_per_tile = 0
-    if visible_jelly_count + bubblegum_count >= glass_target:
+    if visible_jelly_count + covered_count >= glass_target:
         hidden_jelly_per_tile = 1
-    elif visible_jelly_count + 2 * bubblegum_count == glass_target:
+    elif visible_jelly_count + 2 * covered_count == glass_target:
         hidden_jelly_per_tile = 2
     else:
-        # Fallback: estimate how many layers are needed per tile
+        # Fallback if distribution is unclear
         hidden_jelly_per_tile = 2
 
-    for r, c in bubblegum_tiles:
+    # Update jelly grid with inferred hidden layers
+    for r, c in covered_tiles:
         jelly_grid[r][c] = jelly_grid[r][c] + hidden_jelly_per_tile
 
     return jelly_grid
