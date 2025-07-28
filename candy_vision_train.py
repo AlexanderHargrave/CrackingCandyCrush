@@ -830,13 +830,13 @@ def run_move_selection_experiment(skip_existing_results=True):
         strategies = {
             "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
             "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
-            "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=3, simulations_per_move=3, **kwargs),
+            "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
             "expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
             "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
         }
 
-        screenshot_names = ["test1", "test5", "test6", "test7", "test11", "test12","test14","test16","test24","test26"]
-        num_runs = 10
+        screenshot_names = ["test1","test2","test3", "test5", "test6", "test7", "test8","test9","test11", "test12","test14","test15","test16","test24","test26"]
+        num_runs = 20
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -1113,7 +1113,7 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid6):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")"""
-    run_move_selection_experiment(skip_existing_results=True)
+    run_move_selection_experiment(skip_existing_results=False)
 
     
 
