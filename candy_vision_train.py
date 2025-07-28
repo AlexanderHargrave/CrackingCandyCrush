@@ -836,7 +836,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         }
 
         screenshot_names = ["test1", "test5", "test6", "test7", "test11", "test12","test14","test16","test24","test26"]
-        num_runs = 5
+        num_runs = 10
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -965,7 +965,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         plt.close()
         print(f"📈 Saved plot: {completion_plot_path}")
 if __name__ == "__main__":
-    
+    """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
     screenshot_path = "data/test/images/test24.png"
@@ -1047,7 +1047,7 @@ if __name__ == "__main__":
     jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
     for i, row in enumerate(jelly_grid):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    """
+
     best_depth_move, depth_score, depth_tracker = depth_based_simulation(
         candy_grid, jelly_grid, objective_targets, depth=2
     )
@@ -1065,7 +1065,6 @@ if __name__ == "__main__":
     # Now perform the move on the copied grid and print it out to show simulated outcome
     print(f"[Hybrid MCTS]    Move: {best_mcts_move}, Estimated Score: {mcts_score:.2f}, Tracker: {mcts_tracker}")
     print(f"[Monte Carlo]    Move: {monte_carlo_move}, Estimated Score: {monte_carlo_score:.2f}, Tracker: {monte_carlo_tracker}")
-    """
     # 3. Run Depth-based Simulation
     steps_taken_depth, depth_tracker, completion, candy_grid1, jelly_grid1, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, depth_based_simulation, depth = 2, max_steps = moves_left)
     print(f"\nDepth-based Simulation Steps: {steps_taken_depth}")
@@ -1113,7 +1112,8 @@ if __name__ == "__main__":
     for i, row in enumerate(candy_grid6):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid6):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")"""
+    run_move_selection_experiment(skip_existing_results=True)
 
     
 
