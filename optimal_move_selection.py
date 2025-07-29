@@ -1,5 +1,6 @@
 import random
 import copy
+from collections import Counter, defaultdict
 from candy_simulation import ObjectivesTracker
 from candy_simulation import find_possible_moves, apply_move, merge_jelly_to_grid, reshuffle_candies
 import numpy as np
@@ -143,7 +144,6 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
     current_jelly = copy.deepcopy(jelly_grid)
     tracker = ObjectivesTracker()
     steps_taken = 0
-    
     while steps_taken < max_steps:
         consecutive_shuffles = 0
         possible_moves = find_possible_moves(current_grid)
@@ -156,6 +156,7 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
             
             possible_moves = find_possible_moves(current_grid)
 
+        
         move, score, tracker_summary = strategy_fn(current_grid, current_jelly, objective_targets, **strategy_kwargs)
         
         if not move:
@@ -179,6 +180,77 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
             return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, score
 
     return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, score
+def simulate_to_completion_with_ensemble(candy_grid, jelly_grid, objective_targets, strategies, max_steps=30, **kwargs):
+    """
+    Simulate a level using ensemble strategy. Track which strategies agree with ensemble's chosen move (excluding ties).
+
+    Args:
+        candy_grid: Initial candy grid.
+        jelly_grid: Initial jelly grid.
+        objective_targets: Dict of objectives and their required counts.
+        strategies: Dict of name -> strategy function.
+        max_steps: Max number of moves.
+        **kwargs: Extra args passed to strategy functions.
+
+    Returns:
+        steps_taken: Number of moves used.
+        tracker_summary: Final summary of progress.
+        success: Bool indicating if all objectives were met.
+        current_grid: Final candy grid.
+        current_jelly: Final jelly grid.
+        final_score: Score from final move.
+        strategy_agreements: Dict of strategy_name -> count of agreements with ensemble.
+        total_agreeable_steps: How many times the ensemble move wasn't a tie (used as denominator).
+    """
+    current_grid = copy.deepcopy(candy_grid)
+    current_jelly = copy.deepcopy(jelly_grid)
+    tracker = ObjectivesTracker()
+    steps_taken = 0
+    strategy_agreements = defaultdict(int)
+    total_agreeable_steps = 0
+    final_score = -float("inf")  # Default if nothing played
+
+    while steps_taken < max_steps:
+        consecutive_shuffles = 0
+        possible_moves = find_possible_moves(current_grid)
+        while len(possible_moves) == 0:
+            if consecutive_shuffles > 5:
+                print("No more moves")
+                break
+            current_grid = reshuffle_candies(current_grid)
+            consecutive_shuffles += 1
+            possible_moves = find_possible_moves(current_grid)
+
+        move, score, _, agreeing_strategies, is_tiebreak = ensemble_strategy(
+            current_grid, current_jelly, objective_targets, strategies, **kwargs
+        )
+
+        if not move:
+            print("Ensemble strategy failed to find a move.")
+            break
+
+        # Apply the move
+        r1, c1 = move[0]
+        r2, c2 = move[1]
+        current_grid, current_jelly = apply_move(current_grid, current_jelly, r1, c1, r2, c2, tracker=tracker)
+        steps_taken += 1
+        final_score = score
+
+        if not is_tiebreak:
+            total_agreeable_steps += 1
+            for strat in agreeing_strategies:
+                strategy_agreements[strat] += 1
+
+        complete = True
+        for obj, required in objective_targets.items():
+            if tracker.get_summary().get(obj, 0) < required:
+                complete = False
+                break
+
+        if complete:
+            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, final_score, strategy_agreements, total_agreeable_steps
+
+    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, final_score, strategy_agreements, total_agreeable_steps
 
 def expectimax(grid, jelly_grid, objective_targets, depth=2):
     def expectimax_rec(g, j, tracker, curr_depth, is_max_node):
@@ -291,3 +363,31 @@ def heuristics_softmax_best_move(grid, jelly_grid, objective_targets, temperatur
 
     chosen = scored_moves[chosen_index]
     return (chosen[0], chosen[1]), chosen[2], chosen[3]
+    
+
+def ensemble_strategy(current_grid, current_jelly, objective_targets, strategies, **kwargs):
+    move_votes = []
+    strategy_results = {}
+
+    for name, fn in strategies.items():
+        try:
+            move, score, summary = fn(copy.deepcopy(current_grid), copy.deepcopy(current_jelly), objective_targets, **kwargs)
+            if move:
+                move_votes.append(move)
+                strategy_results[name] = (move, score, summary)
+        except Exception:
+            continue
+
+    if not move_votes:
+        return None, -float("inf"), {}, [], False
+
+    vote_counts = Counter(move_votes)
+    max_votes = max(vote_counts.values())
+    modal_moves = [move for move, count in vote_counts.items() if count == max_votes]
+    chosen_move = random.choice(modal_moves)
+    is_tiebreak = len(modal_moves) > 1  # 🚨 Detect tie
+
+    agreeing_strategies = [name for name, (move, _, _) in strategy_results.items() if move == chosen_move]
+    score, summary = strategy_results[agreeing_strategies[0]][1:]
+
+    return chosen_move, score, summary, agreeing_strategies, is_tiebreak

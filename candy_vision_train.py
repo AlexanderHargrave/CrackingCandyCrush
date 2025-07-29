@@ -26,7 +26,7 @@ import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
 from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker, infer_hidden_jelly_layers
-from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax
+from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax, simulate_to_completion_with_ensemble, ensemble_strategy
 from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
 # === Config ===
@@ -826,7 +826,6 @@ def run_move_selection_experiment(skip_existing_results=True):
     else:
         print("🔁 Running full simulation for move selection strategies...")
 
-        # === STRATEGIES ===
         strategies = {
             "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
             "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
@@ -835,8 +834,8 @@ def run_move_selection_experiment(skip_existing_results=True):
             "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
         }
 
-        screenshot_names = ["test1","test2","test3", "test5", "test6", "test7", "test8","test9","test11", "test12","test14","test15","test16","test24","test26"]
-        num_runs = 20
+        screenshot_names = ["test1", "test2", "test3", "test5", "test6", "test7", "test8", "test9", "test11", "test12", "test14", "test15", "test16", "test24", "test26"]
+        num_runs = 1
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -847,12 +846,10 @@ def run_move_selection_experiment(skip_existing_results=True):
         model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
         short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
 
-        # Load classification models
         candy_models, candy_class_names = load_models_for_task("candy", data_dir, model_names, num_epochs, "candy", sample_eval_size)
         objective_models, objective_class_names = load_models_for_task("objective", "objectives", short_model_names, num_epochs, "objective", sample_eval_size)
         loader_models, loader_class_names = load_models_for_task("loader", "loader", short_model_names, num_epochs, "loader", sample_eval_size)
 
-        # Extract color ranges
         range1 = extract_unique_colors("jelly_levels/one_jelly")
         range2 = extract_unique_colors("jelly_levels/two_jelly")
         range3 = extract_unique_colors("jelly_levels/marmalade")
@@ -876,9 +873,11 @@ def run_move_selection_experiment(skip_existing_results=True):
             jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
 
             for run_index in range(1, num_runs + 1):
+                # === Run all individual strategies ===
+                strategy_first_moves = {}
                 for strategy_name, strategy_fn in strategies.items():
                     try:
-                        steps_taken, _, completion, *_ = strategy_fn(
+                        steps_taken, summary, completed, _, _, _ = strategy_fn(
                             candy_grid=candy_grid,
                             jelly_grid=jelly_grid,
                             objective_targets=objective_targets,
@@ -889,7 +888,7 @@ def run_move_selection_experiment(skip_existing_results=True):
                             "run": run_index,
                             "strategy": strategy_name,
                             "moves_taken": steps_taken,
-                            "completed": completion
+                            "completed": completed
                         })
                     except Exception as e:
                         results.append({
@@ -900,70 +899,179 @@ def run_move_selection_experiment(skip_existing_results=True):
                             "completed": False,
                             "error": str(e)
                         })
+                        strategy_first_moves[strategy_name] = None
 
-        # Save results
-        results_df = pd.DataFrame(results)
-        results_df.to_csv(output_csv_path, index=False)
+                # === Run ensemble and track agreement ===
+                try:
+                    steps_taken, tracker_summary, completed, _, _, _, strategy_agreements, total_agreeable_steps = simulate_to_completion_with_ensemble(
+                        candy_grid=candy_grid,
+                        jelly_grid=jelly_grid,
+                        objective_targets=objective_targets,
+                        strategies={
+                            "depth": depth_based_simulation,
+                            "monte_carlo": monte_carlo_best_move,
+                            "mcts": hybrid_mcts,
+                            "expectimax": expectimax,
+                            "softmax": heuristics_softmax_best_move
+                        },
+                        max_steps=moves_left
+                    )
+                    results.append({
+                        "image": screenshot_name,
+                        "run": run_index,
+                        "strategy": "ensemble",
+                        "moves_taken": steps_taken,
+                        "completed": completed,
+                        "first_move": None
+                    })
+                    for strat_name in strategies.keys():
+                        agree_count = strategy_agreements.get(strat_name, 0)
+                        results.append({
+                            "image": screenshot_name,
+                            "run": run_index,
+                            "strategy": strat_name,
+                            "ensemble_agreement_count": agree_count,
+                            "ensemble_total_considered": total_agreeable_steps,
+                            "agreement_rate": agree_count / total_agreeable_steps if total_agreeable_steps > 0 else None
+                        })
+                except Exception as e:
+                    results.append({
+                        "image": screenshot_name,
+                        "run": run_index,
+                        "strategy": "ensemble",
+                        "moves_taken": -1,
+                        "completed": False,
+                        "error": str(e)
+                    })
+
+        df = pd.DataFrame(results)
+        df.to_csv(output_csv_path, index=False)
         print(f"\n✅ Saved simulation results to {output_csv_path}")
-        df = results_df
 
-            # === ANALYSIS ===
-            # Filter out runs with errors or invalid move counts
-        df = df[df["moves_taken"] >= 0]
+    # === Summary metrics ===
+    agreement_summary = (
+        df[df["agreement_rate"].notnull()]
+        .groupby("strategy")
+        .agg(
+            total_agreements=("ensemble_agreement_count", "sum"),
+            total_considered=("ensemble_total_considered", "sum")
+        )
+        .reset_index()
+    )
+    df_filtered = df[df["moves_taken"].notnull() & df["completed"].notnull()]
 
-        # === SUMMARY METRICS ===
+    # Pivot to compare each strategy with ensemble per image/run
+    comparison_records = []
 
-        # Only use completed runs to compute avg_moves
-        completed_df = df[df["completed"] == True]
+    grouped = df_filtered.groupby(["image", "run"])
 
-        # Compute summary (only completed runs for avg_moves, all for completion rate)
-        avg_moves_summary = completed_df.groupby("strategy").agg(
-            avg_moves=("moves_taken", "mean"),
-            total_moves=("moves_taken", "sum"),
-        ).reset_index()
+    for (image, run), group in grouped:
+        ensemble_row = group[group["strategy"] == "ensemble"]
+        if ensemble_row.empty:
+            continue
+        ensemble_completed = ensemble_row["completed"].values[0]
+        ensemble_moves = ensemble_row["moves_taken"].values[0]
 
-        completion_summary = df.groupby("strategy").agg(
-            completion_rate=("completed", "mean"),
-            runs=("completed", "count"),
-            completions=("completed", "sum")
-        ).reset_index()
+        for _, row in group.iterrows():
+            strategy = row["strategy"]
+            if strategy == "ensemble":
+                continue
 
-        summary = pd.merge(avg_moves_summary, completion_summary, on="strategy")
-        summary["completion_rate"] = (summary["completion_rate"] * 100).round(2)
+            completed = row["completed"]
+            moves = row["moves_taken"]
 
-        print("\n=== ✅ Overall Strategy Comparison ===")
-        print(summary.sort_values(by="completion_rate", ascending=False))
+            if completed and not ensemble_completed:
+                result = "Outperformed"
+            elif completed and ensemble_completed:
+                if moves < ensemble_moves:
+                    result = "Outperformed"
+                elif moves == ensemble_moves:
+                    result = "Tie"
+                else:
+                    result = "Worse"
+            else:
+                result = "Worse"
 
-        # === PER-IMAGE BREAKDOWN ===
-        per_image = df.groupby(["image", "strategy"]).agg(
-            avg_moves=("moves_taken", lambda x: round(x[df.loc[x.index, "completed"] == True].mean(), 2)),
-            completion_rate=("completed", lambda x: round(100 * x.mean(), 2))
-        ).reset_index()
+            comparison_records.append({
+                "image": image,
+                "run": run,
+                "strategy": strategy,
+                "completed": completed,
+                "moves_taken": moves,
+                "ensemble_completed": ensemble_completed,
+                "ensemble_moves": ensemble_moves,
+                "result": result
+            })
 
-        print("\n=== 📊 Per-Image Strategy Breakdown ===")
-        print(per_image)
+    comparison_df = pd.DataFrame(comparison_records)
 
-        # === PLOTS ===
-        move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
-        completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
+    summary = comparison_df.groupby("strategy")["result"].value_counts().unstack(fill_value=0).reset_index()
 
-        plt.figure(figsize=(10, 6))
-        summary.sort_values("avg_moves").plot.bar(x="strategy", y="avg_moves", legend=False)
-        plt.title("Average Moves Taken per Strategy (Only Completed Runs)")
-        plt.ylabel("Average Moves")
-        plt.tight_layout()
-        plt.savefig(move_plot_path)
-        plt.close()
-        print(f"📈 Saved plot: {move_plot_path}")
+    result_cols = [col for col in summary.columns if col not in ['strategy']]
 
-        plt.figure(figsize=(10, 6))
-        summary.sort_values("completion_rate").plot.bar(x="strategy", y="completion_rate", legend=False)
-        plt.title("Completion Rate per Strategy (%)")
-        plt.ylabel("Completion Rate (%)")
-        plt.tight_layout()
-        plt.savefig(completion_plot_path)
-        plt.close()
-        print(f"📈 Saved plot: {completion_plot_path}")
+    summary["Outperformance Rate (%)"] = (
+        100 * summary.get("Outperformed", 0) / summary[result_cols].sum(axis=1)
+    ).round(2)
+    print(summary)
+    
+    agreement_summary["agreement_rate"] = (agreement_summary["total_agreements"] / agreement_summary["total_considered"])
+    df = df[df["moves_taken"] >= 0]
+    completed_df = df[df["completed"] == True]
+
+    avg_moves_summary = completed_df.groupby("strategy").agg(
+        avg_moves=("moves_taken", "mean"),
+        total_moves=("moves_taken", "sum"),
+    ).reset_index()
+
+    completion_summary = df.groupby("strategy").agg(
+        completion_rate=("completed", "mean"),
+        runs=("completed", "count"),
+        completions=("completed", "sum")
+    ).reset_index()
+
+    summary = pd.merge(avg_moves_summary, completion_summary, on="strategy", how="outer")
+    summary["completion_rate"] = (summary["completion_rate"] * 100).round(2)
+
+    print("\n=== ✅ Overall Strategy Comparison ===")
+    print(summary.sort_values(by="completion_rate", ascending=False))
+    print("\n=== 🤝 Ensemble Agreement Rate (Over Full Simulation) ===")
+    if agreement_summary.empty:
+        print("⚠️ No agreement rate data found.")
+    else:
+        print(agreement_summary.sort_values("agreement_rate", ascending=False))
+
+    # === PLOTS ===
+    move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
+    completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
+    agreement_plot_path = os.path.join(graph_dir, "ensemble_agreement_rate.png")
+
+    plt.figure(figsize=(10, 6))
+    summary.sort_values("avg_moves").plot.bar(x="strategy", y="avg_moves", legend=False)
+    plt.title("Average Moves Taken per Strategy (Only Completed Runs)")
+    plt.ylabel("Average Moves")
+    plt.tight_layout()
+    plt.savefig(move_plot_path)
+    plt.close()
+    print(f"📈 Saved plot: {move_plot_path}")
+
+    plt.figure(figsize=(10, 6))
+    summary.sort_values("completion_rate").plot.bar(x="strategy", y="completion_rate", legend=False)
+    plt.title("Completion Rate per Strategy (%)")
+    plt.ylabel("Completion Rate (%)")
+    plt.tight_layout()
+    plt.savefig(completion_plot_path)
+    plt.close()
+    print(f"📈 Saved plot: {completion_plot_path}")
+
+    plt.figure(figsize=(10, 6))
+    agreement_summary.sort_values("agreement_rate").plot.bar(x="strategy", y="agreement_rate", legend=False)
+    plt.title("Agreement with Ensemble Decision (%)")
+    plt.ylabel("Agreement Rate (%)")
+    plt.tight_layout()
+    plt.savefig(agreement_plot_path)
+    plt.close()
+
+
 if __name__ == "__main__":
     """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -1113,7 +1221,7 @@ if __name__ == "__main__":
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid6):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")"""
-    run_move_selection_experiment(skip_existing_results=False)
+    run_move_selection_experiment(skip_existing_results=True)
 
     
 
