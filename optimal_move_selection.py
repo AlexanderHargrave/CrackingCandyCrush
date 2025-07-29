@@ -7,7 +7,7 @@ import numpy as np
 import heapq
 def evaluate_board(tracker_summary, objective_targets):
     """
-    Weighted evaluation score for the board based on objectives, urgency, and indirect blocker progress.
+    Weighted evaluation score for the board based on objectives, urgency, and other blockers.
     """
     score = 0
 
@@ -385,7 +385,7 @@ def ensemble_strategy(current_grid, current_jelly, objective_targets, strategies
     max_votes = max(vote_counts.values())
     modal_moves = [move for move, count in vote_counts.items() if count == max_votes]
     chosen_move = random.choice(modal_moves)
-    is_tiebreak = len(modal_moves) > 1  # 🚨 Detect tie
+    is_tiebreak = len(modal_moves) > 1 
 
     agreeing_strategies = [name for name, (move, _, _) in strategy_results.items() if move == chosen_move]
     score, summary = strategy_results[agreeing_strategies[0]][1:]

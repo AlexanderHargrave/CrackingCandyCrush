@@ -990,8 +990,6 @@ def apply_swap(grid, jelly_grid, r1, c1, r2, c2):
     is_choc2 = is_chocolate(c2_label)
     is_spec1 = is_special_candy(base_label(c1_label))
     is_spec2 = is_special_candy(base_label(c2_label))
-
-    # 🍫 Chocolate + Chocolate → clear entire board
     if is_choc1 and is_choc2:
         for r in range(rows):
             for c in range(cols):
@@ -1050,7 +1048,6 @@ def apply_swap(grid, jelly_grid, r1, c1, r2, c2):
                     fish_targets.add(target)
             matched |= fish_targets
 
-    # 🎁 Wrapped + Striped → cross 3 rows + columns centered on the wrapped
     elif (is_spec1 and get_special_suffix(c1_label) == "W") or (is_spec2 and get_special_suffix(c2_label) == "W"):
         wrap_r, wrap_c = (r1, c1) if get_special_suffix(c1_label) == "W" else (r2, c2)
 

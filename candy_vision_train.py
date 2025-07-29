@@ -29,14 +29,14 @@ from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_m
 from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax, simulate_to_completion_with_ensemble, ensemble_strategy
 from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
-# === Config ===
+# Config
 IMG_SIZE = 64
 BATCH_SIZE = 32
 EPOCHS = 100
 LR = 0.0001
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# === Image Transform (Used in Training + Prediction) ===
+# Image Transform 
 candy_train_transform = transforms.Compose([
     transforms.Resize((IMG_SIZE, IMG_SIZE)),
     transforms.RandomApply([transforms.ColorJitter(brightness=0.2, contrast=0.2)], p=0.5),
@@ -55,7 +55,7 @@ candy_eval_transform = transforms.Compose([
 ])
 
 
-
+# Model selection for candy classification
 def get_model(model_name, num_classes):
     if model_name == "efficientnet_b0":
         model = efficientnet_b0(weights=EfficientNet_B0_Weights.DEFAULT)
@@ -133,7 +133,6 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
         train_accuracies.append(train_acc)
         print(f"Train Loss: {train_loss:.4f} | Train Acc: {train_acc:.2f}%")
 
-        # ====== VALIDATION ======
         model.eval()
         val_loss, correct, total = 0.0, 0, 0
 
@@ -152,7 +151,6 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
         val_accuracies.append(val_acc)
         print(f"Val Loss: {val_loss:.4f} | Val Acc: {val_acc:.2f}%")
 
-        # ====== EARLY STOPPING LOGIC ======
         if val_acc > best_val_acc:
             best_val_acc = val_acc
             best_model_state = model.state_dict()
@@ -167,7 +165,6 @@ def train_model(model_name, train_loader, val_loader, num_epochs=EPOCHS, lr=LR, 
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
 
-    # ====== SAVE TRAINING CURVES ======
     os.makedirs("graphs", exist_ok=True)
     epochs_range = range(1, len(train_accuracies) + 1)
     if target == "candy":
@@ -216,11 +213,11 @@ def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_e
     model = get_model(model_name, len(class_names))
 
     if os.path.exists(model_path):
-        print("✅ Pre-trained model found. Loading...")
+        print("Pre-trained model found. Loading.")
         model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     else:
         print(model_name)
-        print("No pre-trained model found. Training a new one...")
+        print("No pre-trained model found. Training a new one.")
         model = train_model(model_name, train_loader, val_loader, num_epochs=num_epochs, lr=lr, target=target)
         torch.save(model.state_dict(), model_path)
         print(f"Model saved to {model_path}")
@@ -230,13 +227,13 @@ def load_or_train_model(data_dir='candy_dataset', model_path='candy_classifier_e
 
 
 def evaluate_model(model, dataset_dir, class_names, sample_size=100):
-    """Evaluates the model on a random sample of images."""
+    """Evaluates the model or given sample size from dataset."""
     dataset = datasets.ImageFolder(dataset_dir, transform=candy_eval_transform)
 
     all_indices = list(range(len(dataset)))
     sample_indices = random.sample(all_indices, min(sample_size, len(dataset)))
     correct = 0
-    print(f"Evaluating on {len(sample_indices)} random samples...")
+    print(f"Evaluating on {len(sample_indices)} random samples.")
     model.eval()
     for idx in sample_indices:
         img, label = dataset[idx]
@@ -263,8 +260,6 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
     detections_objective = []
     for box in results.boxes:
         class_id = int(box.cls[0].item())
-
-
         xyxy = box.xyxy[0].cpu().numpy().astype(int)
         if class_id == 0:
             detections_candy.append((xyxy, "candy"))
@@ -277,7 +272,7 @@ def detect_candies_yolo(image_path, yolo_weights="runs/detect/train7/weights/bes
     print(f"Detected {len(detections_candy)} candies, {len(detections_gap)} gaps, {len(detections_loader)} loaders, {len(detections_objective)} objectives.")
 
 
-    return detections_candy, detections_gap, detections_loader, detections_objective  # List of [x1, y1, x2, y2]
+    return detections_candy, detections_gap, detections_loader, detections_objective  # Lists: [x1, y1, x2, y2]
 def extract_jelly_colour_range(folder):
     pixels = []
     for fname in os.listdir(folder):
@@ -288,13 +283,11 @@ def extract_jelly_colour_range(folder):
     all_pixels = np.vstack(pixels)
     # Get mean values and the range to be detected is like 20 pixels around the mean
     mean_vals = np.mean(all_pixels, axis=0)
-    min_vals = np.maximum(mean_vals - 10, 0)  # Ensure no negative values
-    max_vals = np.minimum(mean_vals + 10, 255)  # Ensure no values exceed 255
+    min_vals = np.maximum(mean_vals - 10, 0) 
+    max_vals = np.minimum(mean_vals + 10, 255)  
     return min_vals, max_vals
-# Instead of extract jelly colour range, i've given like one small 5 by 5 or less size image for jelly1 and jelly2, detect all pixels in the image and then count matching in given crop
 def extract_unique_colors(folder):
-    """Extract unique RGB tuples from a reference image"""
-    # make it so extracts from all images in directory
+    """Extract RGB tuples from image"""
     pixels = []
     for fname in os.listdir(folder):
         if fname.endswith(".png"):
@@ -302,14 +295,12 @@ def extract_unique_colors(folder):
             pixels.append(np.array(img).reshape(-1, 3))
     all_pixels = np.vstack(pixels)
     unique_colors = np.unique(all_pixels, axis=0)
-    # Convert to list of tuples
     reference_colors = [tuple(color) for color in unique_colors if np.all(color >= 0) and np.all(color <= 255)]
     return reference_colors
 def count_matching_colors_from_patch(crop_pil, reference_colors, tolerance=3):
     crop = np.array(crop_pil).reshape(-1, 3)
     count = 0
     for ref_color in reference_colors:
-        # Create a mask for pixels within the tolerance range
         mask = np.all(np.abs(crop - ref_color) <= tolerance, axis=1)
         count += np.sum(mask)
     return count
@@ -319,12 +310,11 @@ def count_matching_jelly_pixels(crop_pil, color_range):
     match = np.all((crop >= min_rgb) & (crop <= max_rgb), axis=1)
     return np.sum(match)
 def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, thresh2=30, thresh3 = 50, thresh4 = 50, candy_type = None):
+    # Really dumb function to get jelly layer depending on color of pixels trained on same pixel range to identify stuff correctly. It works most of the time but not fully checked and locks mess it up.
     count1 = count_matching_colors_from_patch(crop_pil, range1)
     count2 = count_matching_colors_from_patch(crop_pil, range2)
     count3 = count_matching_colors_from_patch(crop_pil, range3)
     count4 = count_matching_colors_from_patch(crop_pil, range4, tolerance = 5)
-    #if "frosting" in candy_type:
-        #print(count1, count2, count3, count4)
     if "orange" in candy_type:
         thresh3 = 70
     if "lock" in candy_type:
@@ -340,7 +330,6 @@ def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, th
         thresh4 = 30
 
     if count1 > thresh1 and count1 > count2 and count3 < count1:
-        # check if count1 is less than 3 away from count2, if so crop and check again
         if count2 > 1 and abs(count1 - count2) < 10:
             crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
             count1 = count_matching_colors_from_patch(crop_pil, range1)
@@ -373,7 +362,6 @@ def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, th
             return "no jelly"
                                
     elif count2 > thresh2 and count1 < count2 and count3 < count2:
-        # check if count2 is less than 3 away from count1, if so crop and check again
         if count1 > 1 and abs(count2 - count1) < 10:
             crop_pil = crop_pil.crop((1, 1, crop_pil.width-1, crop_pil.height-1))
             count1 = count_matching_colors_from_patch(crop_pil, range1)
@@ -467,7 +455,7 @@ def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, th
 def classify_candies(image_path, detections, models, class_names, update = False, check_candy = True, range1 = None, range2 = None, range3 = None, range4 = None):
     image = Image.open(image_path).convert("RGB")
     predictions = []
-    max_per_class = 50  # Limit per class to avoid dataset bloat
+    max_per_class = 50 
     for box, _ in detections:
         x1, y1, x2, y2 = box
         crop = image.crop((x1, y1, x2, y2))
@@ -515,28 +503,22 @@ def classify_candies(image_path, detections, models, class_names, update = False
             
             crop.save(save_path)
     
-    return predictions  # List of tuples: (box, class_name)
+    return predictions 
 import pytesseract
 def cluster_detections_by_rows(candy_detections, gap_detections, loader_detections, tolerance=40):
     """
-    Builds a full grid using candy/gap detections, estimates missing tiles as gaps,
-    and assigns loader detections to the grid based on proximity to candies below.
+    Builds a full grid using candy/gap detections, estimates missing tiles as gaps, and completes the rest.
     """
-    # Combine and normalize
     all_detections = [(box, label) for box, label in candy_detections + gap_detections]
 
     if not candy_detections:
         print("No candies detected.")
         return []
-
-    # === Step 1: Estimate board dimensions from candy positions ===
     x_coords = [box[0][0] for box in candy_detections]
     y_coords = [box[0][1] for box in candy_detections]
     x_coords += [box[0][2] for box in candy_detections]
     y_coords += [box[0][3] for box in candy_detections]
-    # pring average candy size, both x and y
-    #avg_candy_width = np.mean([box[0][2] - box[0][0] for box in candy_detections])
-    #avg_candy_height = np.mean([box[0][3] - box[0][1] for box in candy_detections])
+
     avg_candy_width = 66
     avg_candy_height = 73
     min_x, max_x = min(x_coords), max(x_coords)
@@ -544,7 +526,6 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
 
     grid_width = max_x - min_x
     grid_height = max_y - min_y
-    # print(f"🗺️ Detected grid dimensions: {grid_width}x{grid_height} pixels")
 
     num_cols = round(grid_width / avg_candy_width)
     num_rows = round(grid_height / avg_candy_height)
@@ -555,7 +536,6 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
 
     print(f"Estimated Grid: {num_rows} rows x {num_cols} cols")
 
-    # === Step 2: Build grid shape ===
     grid = [[None for _ in range(num_cols)] for _ in range(num_rows)]
 
     for row in range(num_rows):
@@ -585,7 +565,7 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
             elif best_match:
                 grid[row][col] = best_match
             else:
-                # No match found — assume gap
+                # No match found — assume gap and fills it in
                 grid[row][col] = ([
                     int(center_x - avg_candy_width / 2),
                     int(center_y - avg_candy_height / 2),
@@ -593,7 +573,7 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
                     int(center_y + avg_candy_height / 2)
                 ], "gap")
 
-    # === Step 3: Assign loaders to rows above matching candies ===
+    # Loader detecter
     for loader_box, loader_label in loader_detections:
         lx1, ly1, lx2, ly2 = loader_box
         loader_cx = (lx1 + lx2) / 2
@@ -618,19 +598,17 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
         if best_candy_pos:
             row, col, candy_label = best_candy_pos
             loader_type = f"loader of {loader_label}"
-            # Place loader above candy if possible
+            # Place loader above candy and if top row, will get new row
             if row > 0:
                 grid[row - 1][col] = (loader_box, loader_type)
-            # If loader above row 0, i want to generate a new row above it, where it will be placed
             elif row == 0:
-                # Create a new row above
                 new_row = []
                 for c in range(num_cols):
                     if c == col:
                         new_row.append((loader_box, loader_type))
                     else:
                         center_x = int(min_x + (c + 0.5) * avg_candy_width)
-                        center_y = int(min_y - 0.5 * avg_candy_height)  # one row above the first row
+                        center_y = int(min_y - 0.5 * avg_candy_height) 
                         gap_box = [
                             int(center_x - avg_candy_width / 2),
                             int(center_y - avg_candy_height / 2),
@@ -640,10 +618,6 @@ def cluster_detections_by_rows(candy_detections, gap_detections, loader_detectio
                         new_row.append((gap_box, "gap"))
                 grid.insert(0, new_row)
                 num_rows += 1
-                # Shift existing rows down
-                #for r in range(1, num_rows):
-                    #grid[r] = grid[r - 1]
-
     return grid
 
 
@@ -658,9 +632,8 @@ def auto_expand_dataset_from_yolo(
 ):
     DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # === Load class names ===
+
     _, _, class_names = load_dataset(candy_dataset_path, candy_eval_transform)
-    # === Load ensemble models ===
     models_list = []
     for model_name in model_names:
         # train_loader, val_loader, _ = load_dataset(data_dir, candy_train_transform)
@@ -669,11 +642,9 @@ def auto_expand_dataset_from_yolo(
         model.eval()
         models_list.append(model)
 
-    # === Go through each image in provided directories ===
     for dir_path in image_dirs:
         if not os.path.exists(dir_path):
             continue
-
         for filename in os.listdir(dir_path):
             if not filename.lower().endswith((".png", ".jpg", ".jpeg")):
                 continue
@@ -681,7 +652,7 @@ def auto_expand_dataset_from_yolo(
             image_path = os.path.join(dir_path, filename)
             candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(image_path, yolo_model_path)
             classified = classify_candies(image_path, candies_box, models_list, class_names, update=True)
-# This function goes through all images in data/images/train and data/images/val and data/temp and gets all the objective and loader images, saves them in objectives and loaders folders
+
 def get_objective_loader_images(images_dir=["data/temp","data/images/train", "data/images/val"], objective_dir="objectives", loader_dir="loader", glass_dir="glass_layers"):
     os.makedirs(objective_dir, exist_ok=True)
     os.makedirs(loader_dir, exist_ok=True)
@@ -720,7 +691,6 @@ def get_objective_loader_images(images_dir=["data/temp","data/images/train", "da
                         count += 1
                 crop.save(save_path)
             """
-            # glass layers is candy boxes, need all candies
             for box, label in candies_box:
                 x1, y1, x2, y2 = box
                 crop = Image.open(image_path).convert("RGB").crop((x1, y1, x2, y2))
@@ -733,13 +703,10 @@ def get_objective_loader_images(images_dir=["data/temp","data/images/train", "da
                         count += 1
                 crop.save(save_path)
 
-# A function to check around 50 to 100 pixels to the right of objective detection and use pytesseract to extrac the number next to each objective
-# This is used to get the objective number from the image
 def detect_moves(image_path):
     image = Image.open(image_path).convert("RGB")
     image_np = np.array(image)
     region = image_np[75:150, image.width//10-20:image.width//10+100]
-    # show the region
     resized = cv2.resize(region, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
     _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
@@ -749,7 +716,6 @@ def detect_moves(image_path):
         result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
         if not result:
             return 0
-    # print(f"Moves Left: {result}")
     return result[0] if result else 0 
 
 
@@ -757,31 +723,25 @@ def detect_moves(image_path):
 def get_objective_numbers(image_path, objective_detections):
     image = Image.open(image_path).convert("RGB")
     image_np = np.array(image)
-    
 
     objective_numbers = []
     
     for box, label in objective_detections:
         x1, y1, x2, y2 = box
-        # Define region to the right of the detection
+
         if len(objective_detections)<3:
             region = image_np[y1:y2, x2-2:x2+50]
         else:
             # region is below instead of to the right
             region = image_np[y2-2:y2+50, x1:x2]
-        # show the region
-        # Run EasyOCR on the cropped region
         resized = cv2.resize(region, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
         gray = cv2.cvtColor(resized, cv2.COLOR_RGB2GRAY)
         _, thresh = cv2.threshold(gray, 180, 255, cv2.THRESH_BINARY)
 
-        # Use this preprocessed image with EasyOCR
         result = reader.readtext(thresh, detail=0, paragraph=False, allowlist='0123456789')
         if not result:
-            # Attempt with pytesseract if EasyOCR fails
             result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
             if not result:
-                # return 0 if no result fouund as it maybe a tick instead which means completed so 0
                 result = ['0']
 
         detected_number = None
@@ -790,19 +750,19 @@ def get_objective_numbers(image_path, objective_detections):
             digits_only = ''.join(filter(str.isdigit, cleaned))
             if digits_only:
                 detected_number = digits_only
-                break  # Take the first valid number found
+                break  
 
         if detected_number:
             objective_numbers.append((box, detected_number))
 
     return objective_numbers
 def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=None, sample_eval_size=1, eval = True):
-    print(f"\n🧠 Loading models for {task_name} classification...")
+    print(f"\nLoading models for {task_name} classification.")
     _, _, class_names = load_dataset(data_dir, candy_eval_transform)
     models_list = []
 
     for model_name in model_names:
-        print(f"\n🚀 Training {model_name.upper()} for {task_name} classification")
+        print(f"\nTraining {model_name.upper()} for {task_name} classification")
         model_path = f"{task_name}_classifier_{model_name}.pth"
         model, _ = load_or_train_model(data_dir, model_path=model_path, num_epochs=num_epochs,
                                        model_name=model_name, target=target)
@@ -821,10 +781,10 @@ def run_move_selection_experiment(skip_existing_results=True):
     os.makedirs(graph_dir, exist_ok=True)
 
     if skip_existing_results and os.path.exists(output_csv_path):
-        print(f"🟡 Skipping simulation (existing results found at {output_csv_path})")
+        print(f"Skipping simulation (existing results found at {output_csv_path})")
         df = pd.read_csv(output_csv_path)
     else:
-        print("🔁 Running full simulation for move selection strategies...")
+        print("Running full simulation for move strategies.")
 
         strategies = {
             "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
@@ -835,7 +795,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         }
 
         screenshot_names = ["test1", "test2", "test3", "test5", "test6", "test7", "test8", "test9", "test11", "test12", "test14", "test15", "test16", "test24", "test26"]
-        num_runs = 1
+        num_runs = 20
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -873,7 +833,6 @@ def run_move_selection_experiment(skip_existing_results=True):
             jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
 
             for run_index in range(1, num_runs + 1):
-                # === Run all individual strategies ===
                 strategy_first_moves = {}
                 for strategy_name, strategy_fn in strategies.items():
                     try:
@@ -901,7 +860,6 @@ def run_move_selection_experiment(skip_existing_results=True):
                         })
                         strategy_first_moves[strategy_name] = None
 
-                # === Run ensemble and track agreement ===
                 try:
                     steps_taken, tracker_summary, completed, _, _, _, strategy_agreements, total_agreeable_steps = simulate_to_completion_with_ensemble(
                         candy_grid=candy_grid,
@@ -946,9 +904,8 @@ def run_move_selection_experiment(skip_existing_results=True):
 
         df = pd.DataFrame(results)
         df.to_csv(output_csv_path, index=False)
-        print(f"\n✅ Saved simulation results to {output_csv_path}")
+        print(f"\nSaved simulation results to {output_csv_path}")
 
-    # === Summary metrics ===
     agreement_summary = (
         df[df["agreement_rate"].notnull()]
         .groupby("strategy")
@@ -1032,15 +989,15 @@ def run_move_selection_experiment(skip_existing_results=True):
     summary = pd.merge(avg_moves_summary, completion_summary, on="strategy", how="outer")
     summary["completion_rate"] = (summary["completion_rate"] * 100).round(2)
 
-    print("\n=== ✅ Overall Strategy Comparison ===")
+    print("\nOverall Strategy Comparison")
     print(summary.sort_values(by="completion_rate", ascending=False))
-    print("\n=== 🤝 Ensemble Agreement Rate (Over Full Simulation) ===")
+    print("\nEnsemble Agreement Rate Summary")
     if agreement_summary.empty:
-        print("⚠️ No agreement rate data found.")
+        print("No agreement rate data found.")
     else:
         print(agreement_summary.sort_values("agreement_rate", ascending=False))
 
-    # === PLOTS ===
+    # PLOTS
     move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
     completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
     agreement_plot_path = os.path.join(graph_dir, "ensemble_agreement_rate.png")
@@ -1052,7 +1009,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     plt.tight_layout()
     plt.savefig(move_plot_path)
     plt.close()
-    print(f"📈 Saved plot: {move_plot_path}")
+    print(f"Saved plot: {move_plot_path}")
 
     plt.figure(figsize=(10, 6))
     summary.sort_values("completion_rate").plot.bar(x="strategy", y="completion_rate", legend=False)
@@ -1061,7 +1018,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     plt.tight_layout()
     plt.savefig(completion_plot_path)
     plt.close()
-    print(f"📈 Saved plot: {completion_plot_path}")
+    print(f"Saved plot: {completion_plot_path}")
 
     plt.figure(figsize=(10, 6))
     agreement_summary.sort_values("agreement_rate").plot.bar(x="strategy", y="agreement_rate", legend=False)
@@ -1084,7 +1041,7 @@ if __name__ == "__main__":
 
     num_epochs = 50
 
-    # ===== CANDY CLASSIFICATION =====
+    # CANDY CLASSIFICATION 
     candy_models, candy_class_names = load_models_for_task(
         task_name="candy",
         data_dir="candy_dataset",
@@ -1094,7 +1051,6 @@ if __name__ == "__main__":
         sample_eval_size=sample_eval_size
     )
 
-    # ===== OBJECTIVE CLASSIFICATION =====
     objective_models, objective_class_names = load_models_for_task(
         task_name="objective",
         data_dir="objectives",
@@ -1103,8 +1059,6 @@ if __name__ == "__main__":
         target="objective",
         sample_eval_size=sample_eval_size
     )
-
-    # ===== LOADER CLASSIFICATION =====
     loader_models, loader_class_names = load_models_for_task(
         task_name="loader",
         data_dir="loader",
@@ -1114,7 +1068,7 @@ if __name__ == "__main__":
         sample_eval_size=sample_eval_size
     )
 
-    # ===== DETECTION =====
+    # detectiom
     candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
     range1 = extract_unique_colors("jelly_levels/one_jelly")
     range2 = extract_unique_colors("jelly_levels/two_jelly")
@@ -1122,13 +1076,11 @@ if __name__ == "__main__":
     range4 = extract_unique_colors("jelly_levels/zero_jelly")
 
 
-    # ===== CLASSIFICATION =====
     candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3 = range3, range4 = range4)
     gap_classified = [(box, "gap") for box, _ in gap_box]
     objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
     loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
 
-    # ===== OBJECTIVE NUMBERS =====
     objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
 
     print("\nObjectives detected:")
@@ -1137,7 +1089,6 @@ if __name__ == "__main__":
         print(f"Objective {idx + 1}: {label} (Number: {number})")
     moves_left = int(detect_moves(screenshot_path))
     print(f"Moves Left: {moves_left}")
-    # ===== GRID STRUCTURING =====
     grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
     tracker = ObjectivesTracker()
     for i, row in enumerate(grid):
@@ -1168,7 +1119,7 @@ if __name__ == "__main__":
     )
 
     # Print comparison
-    print("===== Move Strategy Comparison =====")
+    print("Move Strategy Comparison")
     print(f"[Depth Search]   Move: {best_depth_move}, Estimated Score: {depth_score:.2f}, Tracker: {depth_tracker}")
     # Now perform the move on the copied grid and print it out to show simulated outcome
     print(f"[Hybrid MCTS]    Move: {best_mcts_move}, Estimated Score: {mcts_score:.2f}, Tracker: {mcts_tracker}")
