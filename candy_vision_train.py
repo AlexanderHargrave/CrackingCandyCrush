@@ -969,25 +969,41 @@ def run_move_selection_experiment(skip_existing_results=True):
     summary["Outperformance Rate (%)"] = (
         100 * summary.get("Outperformed", 0) / summary[result_cols].sum(axis=1)
     ).round(2)
+    print("\nStrategy Comparison (Outperformance)")
     print(summary)
     
-    agreement_summary["agreement_rate"] = (agreement_summary["total_agreements"] / agreement_summary["total_considered"]) * 100
-    df = df[df["moves_taken"] >= 0]
-    completed_df = df[df["completed"] == True]
+    df_results = df[df["moves_taken"].notnull()]  # real runs
+    df_agreement = df[df["ensemble_agreement_count"].notnull()]  # agreement-only
+
+    # === Agreement Rate Calculation ===
+    agreement_summary = (
+        df_agreement.groupby("strategy").agg(
+            total_agreements=("ensemble_agreement_count", "sum"),
+            total_considered=("ensemble_total_considered", "sum"),
+        )
+        .reset_index()
+    )
+
+    agreement_summary["agreement_rate"] = (
+        100 * agreement_summary["total_agreements"] / agreement_summary["total_considered"]
+    ).round(2)
+
+    completed_df = df_results[df_results["completed"] == True]
 
     avg_moves_summary = completed_df.groupby("strategy").agg(
         avg_moves=("moves_taken", "mean"),
         total_moves=("moves_taken", "sum"),
     ).reset_index()
 
-    completion_summary = df.groupby("strategy").agg(
+    completion_summary = df_results.groupby("strategy").agg(
         completion_rate=("completed", "mean"),
         runs=("completed", "count"),
         completions=("completed", "sum")
     ).reset_index()
 
+    completion_summary["completion_rate"] = (completion_summary["completion_rate"] * 100).round(2)
+
     summary = pd.merge(avg_moves_summary, completion_summary, on="strategy", how="outer")
-    summary["completion_rate"] = (summary["completion_rate"] * 100).round(2)
 
     print("\nOverall Strategy Comparison")
     print(summary.sort_values(by="completion_rate", ascending=False))
@@ -997,7 +1013,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     else:
         print(agreement_summary.sort_values("agreement_rate", ascending=False))
 
-    # PLOTS
+    # location for saving plots
     move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
     completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
     agreement_plot_path = os.path.join(graph_dir, "ensemble_agreement_rate.png")
@@ -1007,7 +1023,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         title="Average Moves Taken per Strategy (Completed Runs)",
         ylabel="Average Moves",
         output_path=move_plot_path,
-        y_lim_pad=0.05
+        y_lim_pad=0.1
     )
 
     # 2. Completion Rate
@@ -1016,7 +1032,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         title="Completion Rate per Strategy (%)",
         ylabel="Completion Rate (%)",
         output_path=completion_plot_path,
-        y_lim_pad=0.05
+        y_lim_pad=0.1
     )
 
     # 3. Agreement Rate
@@ -1025,7 +1041,7 @@ def run_move_selection_experiment(skip_existing_results=True):
         title="Agreement with Ensemble Decision (%)",
         ylabel="Agreement Rate (%)",
         output_path=agreement_plot_path,
-        y_lim_pad=0.05
+        y_lim_pad=0.1
     )
 
 sns.set_theme(style="whitegrid")
@@ -1033,7 +1049,6 @@ def plot_bar(df, x, y, title, ylabel, output_path, y_lim_pad=0.05):
     plt.figure(figsize=(10, 6))
     sorted_df = df.sort_values(y, ascending=False)
 
-    # Dynamically create palette based on the number of unique categories
     n_colors = sorted_df[x].nunique()
     palette = sns.color_palette("Set2", n_colors)
 
@@ -1041,9 +1056,9 @@ def plot_bar(df, x, y, title, ylabel, output_path, y_lim_pad=0.05):
         data=sorted_df,
         x=x,
         y=y,
-        hue=x,             # Required to apply palette safely
+        hue=x,       
         palette=palette,
-        legend=False       # No redundant legend since x-axis already labels
+        legend=False       
     )
 
     for container in ax.containers:
