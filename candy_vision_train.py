@@ -971,7 +971,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     ).round(2)
     print(summary)
     
-    agreement_summary["agreement_rate"] = (agreement_summary["total_agreements"] / agreement_summary["total_considered"])
+    agreement_summary["agreement_rate"] = (agreement_summary["total_agreements"] / agreement_summary["total_considered"]) * 100
     df = df[df["moves_taken"] >= 0]
     completed_df = df[df["completed"] == True]
 
@@ -1002,33 +1002,67 @@ def run_move_selection_experiment(skip_existing_results=True):
     completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
     agreement_plot_path = os.path.join(graph_dir, "ensemble_agreement_rate.png")
 
+    plot_bar(
+        summary, x="strategy", y="avg_moves",
+        title="Average Moves Taken per Strategy (Completed Runs)",
+        ylabel="Average Moves",
+        output_path=move_plot_path,
+        y_lim_pad=0.05
+    )
+
+    # 2. Completion Rate
+    plot_bar(
+        summary, x="strategy", y="completion_rate",
+        title="Completion Rate per Strategy (%)",
+        ylabel="Completion Rate (%)",
+        output_path=completion_plot_path,
+        y_lim_pad=0.05
+    )
+
+    # 3. Agreement Rate
+    plot_bar(
+        agreement_summary, x="strategy", y="agreement_rate",
+        title="Agreement with Ensemble Decision (%)",
+        ylabel="Agreement Rate (%)",
+        output_path=agreement_plot_path,
+        y_lim_pad=0.05
+    )
+
+sns.set_theme(style="whitegrid")
+def plot_bar(df, x, y, title, ylabel, output_path, y_lim_pad=0.05):
     plt.figure(figsize=(10, 6))
-    summary.sort_values("avg_moves").plot.bar(x="strategy", y="avg_moves", legend=False)
-    plt.title("Average Moves Taken per Strategy (Only Completed Runs)")
-    plt.ylabel("Average Moves")
+    sorted_df = df.sort_values(y, ascending=False)
+
+    # Dynamically create palette based on the number of unique categories
+    n_colors = sorted_df[x].nunique()
+    palette = sns.color_palette("Set2", n_colors)
+
+    ax = sns.barplot(
+        data=sorted_df,
+        x=x,
+        y=y,
+        hue=x,             # Required to apply palette safely
+        palette=palette,
+        legend=False       # No redundant legend since x-axis already labels
+    )
+
+    for container in ax.containers:
+        ax.bar_label(container, fmt='%.2f', padding=3)
+
+    plt.title(title, fontsize=14, weight='bold')
+    plt.ylabel(ylabel, fontsize=12)
+    plt.xlabel("")
+    plt.xticks(rotation=15)
+
+    y_min = sorted_df[y].min()
+    y_max = sorted_df[y].max()
+    if y_min > 0 and y_max / y_min < 1.2:
+        plt.ylim(y_min - y_lim_pad * y_max, min(100, y_max + y_lim_pad * y_max))
+
     plt.tight_layout()
-    plt.savefig(move_plot_path)
+    plt.savefig(output_path)
     plt.close()
-    print(f"Saved plot: {move_plot_path}")
-
-    plt.figure(figsize=(10, 6))
-    summary.sort_values("completion_rate").plot.bar(x="strategy", y="completion_rate", legend=False)
-    plt.title("Completion Rate per Strategy (%)")
-    plt.ylabel("Completion Rate (%)")
-    plt.tight_layout()
-    plt.savefig(completion_plot_path)
-    plt.close()
-    print(f"Saved plot: {completion_plot_path}")
-
-    plt.figure(figsize=(10, 6))
-    agreement_summary.sort_values("agreement_rate").plot.bar(x="strategy", y="agreement_rate", legend=False)
-    plt.title("Agreement with Ensemble Decision (%)")
-    plt.ylabel("Agreement Rate (%)")
-    plt.tight_layout()
-    plt.savefig(agreement_plot_path)
-    plt.close()
-
-
+    print(f"Saved plot: {output_path}")
 if __name__ == "__main__":
     """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -1115,7 +1149,7 @@ if __name__ == "__main__":
     # 2. Run Hybrid MCTS with Pruning
     best_mcts_move, mcts_score, mcts_tracker = hybrid_mcts(
         candy_grid, jelly_grid, moves, objective_targets,
-        max_depth=2, simulations_per_move=5
+        max_depth=3, simulations_per_move=3
     )
 
     # Print comparison
