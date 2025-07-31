@@ -1078,7 +1078,102 @@ def plot_bar(df, x, y, title, ylabel, output_path, y_lim_pad=0.05):
     plt.savefig(output_path)
     plt.close()
     print(f"Saved plot: {output_path}")
+def predict_optimal_move(screenshot_path, quick=True):
+
+    if quick:
+        model_names = ["resnet34"]
+        short_model_names = ["resnet18"]
+    else:
+        model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
+        short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+
+    num_epochs = 50
+    sample_eval_size = 1
+    yolo_model_path = "runs/detect/train7/weights/best.pt"
+
+    candy_models, candy_class_names = load_models_for_task(
+        task_name="candy",
+        data_dir="candy_dataset",
+        model_names=model_names,
+        num_epochs=num_epochs,
+        target="candy",
+        sample_eval_size=sample_eval_size,
+        eval = False
+    )
+
+    objective_models, objective_class_names = load_models_for_task(
+        task_name="objective",
+        data_dir="objectives",
+        model_names=short_model_names,
+        num_epochs=num_epochs,
+        target="objective",
+        sample_eval_size=sample_eval_size,
+        eval = False
+    )
+
+    loader_models, loader_class_names = load_models_for_task(
+        task_name="loader",
+        data_dir="loader",
+        model_names=short_model_names,
+        num_epochs=num_epochs,
+        target="loader",
+        sample_eval_size=sample_eval_size,
+        eval = False
+    )
+
+    candies_box, gap_box, loader_box, objective_box = detect_candies_yolo(screenshot_path, yolo_model_path)
+
+    range1 = extract_unique_colors("jelly_levels/one_jelly")
+    range2 = extract_unique_colors("jelly_levels/two_jelly")
+    range3 = extract_unique_colors("jelly_levels/marmalade")
+    range4 = extract_unique_colors("jelly_levels/zero_jelly")
+
+    candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3=range3, range4=range4)
+    gap_classified = [(box, "gap") for box, _ in gap_box]
+    objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
+    loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
+
+    objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
+    grid = cluster_detections_by_rows(candy_classified, gap_classified, loader_classified, tolerance=40)
+    candy_grid, jelly_grid = extract_jelly_grid(grid)
+    objective_targets = {label: int(number) for (_, label), (_, number) in zip(objective_classified, objective_numbers)}
+    jelly_grid = infer_hidden_jelly_layers(candy_grid, jelly_grid, objective_targets)
+
+    if quick:
+        best_move, score, tracker = depth_based_simulation(candy_grid, jelly_grid, objective_targets, depth = 2)
+    else:
+        strategies = {
+            "depth": depth_based_simulation,
+            "monte_carlo": monte_carlo_best_move,
+            "mcts": hybrid_mcts,
+            "expectimax": expectimax,
+            "softmax": heuristics_softmax_best_move
+        }
+        best_move, score, tracker, _, _ = ensemble_strategy(
+            candy_grid, jelly_grid, objective_targets, strategies
+        )
+    
+    location1 = candy_grid[best_move[0][0]][best_move[0][1]]
+    location2 = candy_grid[best_move[1][0]][best_move[1][1]]
+    return best_move, tracker, location1[0], location2[0]
+import pyautogui
+import time
 if __name__ == "__main__":
+    screenshot_path = "data/test/images/test24.png"
+    move, tracker, location1, location2 = predict_optimal_move(screenshot_path)
+    centreX1 = (location1[0] + location1[2])//2
+    centreY1 = (location1[1] + location1[3]) // 2
+    centreX2 = (location2[0] + location2[2])//2
+    centreY2 = (location2[1] + location2[3]) // 2
+    screen_width, screen_height = pyautogui.size()
+    x_shift = 0.3 * screen_width
+    centreX1 += x_shift
+    centreX2 += x_shift
+    pyautogui.moveTo(centreX1, centreY1, duration=0.2)
+    pyautogui.dragTo(centreX2, centreY2, duration=0.2, button='left')
+    print("Move: ", move)
+    print("Tracker1: ", tracker)
+
     """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
@@ -1160,12 +1255,26 @@ if __name__ == "__main__":
         candy_grid, jelly_grid, objective_targets, depth=2
     )
     monte_carlo_move, monte_carlo_score, monte_carlo_tracker = monte_carlo_best_move(
-        candy_grid, jelly_grid, objective_targets,5)
+        candy_grid, jelly_grid, objective_targets,3)
     # 2. Run Hybrid MCTS with Pruning
     best_mcts_move, mcts_score, mcts_tracker = hybrid_mcts(
-        candy_grid, jelly_grid, moves, objective_targets,
+        candy_grid, jelly_grid, objective_targets,
         max_depth=3, simulations_per_move=3
     )
+    best_expectimax_move, expectimax_score, expectimax_tracker = expectimax(
+        candy_grid, jelly_grid, objective_targets, depth=2)
+    best_softmax_move, softmax_score, softmax_tracker = heuristics_softmax_best_move(
+        candy_grid, jelly_grid, objective_targets)
+    strategies = {
+        "depth": depth_based_simulation,
+        "monte_carlo": monte_carlo_best_move,
+        "mcts": hybrid_mcts,
+        "expectimax": expectimax,
+        "softmax": heuristics_softmax_best_move
+    }
+    best_ensemble_moves, ensemble_score, ensemble_tracker,_,_ = ensemble_strategy(
+        candy_grid, jelly_grid, objective_targets, strategies)
+
 
     # Print comparison
     print("Move Strategy Comparison")
@@ -1173,6 +1282,10 @@ if __name__ == "__main__":
     # Now perform the move on the copied grid and print it out to show simulated outcome
     print(f"[Hybrid MCTS]    Move: {best_mcts_move}, Estimated Score: {mcts_score:.2f}, Tracker: {mcts_tracker}")
     print(f"[Monte Carlo]    Move: {monte_carlo_move}, Estimated Score: {monte_carlo_score:.2f}, Tracker: {monte_carlo_tracker}")
+    print(f"[Expectimax]     Move: {best_expectimax_move}, Estimated Score: {expectimax_score:.2f}, Tracker: {expectimax_tracker}")
+    print(f"[Softmax Heuristic] Move: {best_softmax_move}, Estimated Score: {softmax_score:.2f}, Tracker: {softmax_tracker}")
+    print(f"[Ensemble Strategy] Move: {best_ensemble_moves}, Estimated Score: {ensemble_score:.2f}, Tracker: {ensemble_tracker}")
+    
     # 3. Run Depth-based Simulation
     steps_taken_depth, depth_tracker, completion, candy_grid1, jelly_grid1, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, depth_based_simulation, depth = 2, max_steps = moves_left)
     print(f"\nDepth-based Simulation Steps: {steps_taken_depth}")
@@ -1220,8 +1333,10 @@ if __name__ == "__main__":
     for i, row in enumerate(candy_grid6):
         print(f"Row {i + 1}: {[label for _, label in row]}")
     for i, row in enumerate(jelly_grid6):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")"""
+        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
+
     run_move_selection_experiment(skip_existing_results=True)
+    """
 
     
 
