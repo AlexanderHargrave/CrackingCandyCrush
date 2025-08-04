@@ -776,8 +776,8 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 
     return models_list, class_names
 def run_move_selection_experiment(skip_existing_results=True):
-    output_csv_path = "simulation_results.csv"
-    graph_dir = "graphs/move_selection"
+    output_csv_path = "simulation_results_depth.csv"
+    graph_dir = "graphs/move_selection/depth_comparison"
     os.makedirs(graph_dir, exist_ok=True)
 
     if skip_existing_results and os.path.exists(output_csv_path):
@@ -786,16 +786,21 @@ def run_move_selection_experiment(skip_existing_results=True):
     else:
         print("Running full simulation for move strategies.")
 
+        #strategies = {
+            #"depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
+            #"monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
+            #"mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
+            #"expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
+            #"softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
+        #}
         strategies = {
-            "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
+            "depth2": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
             "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
-            "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
-            "expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
-            "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
+            "depth3": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=3, **kwargs),
         }
 
         screenshot_names = ["test1", "test2", "test3", "test5", "test6", "test7", "test8", "test9", "test11", "test12", "test14", "test15", "test16", "test24", "test26"]
-        num_runs = 20
+        num_runs = 5
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"
@@ -1156,23 +1161,9 @@ def predict_optimal_move(screenshot_path, quick=True):
     location1 = candy_grid[best_move[0][0]][best_move[0][1]]
     location2 = candy_grid[best_move[1][0]][best_move[1][1]]
     return best_move, tracker, location1[0], location2[0]
-import pyautogui
-import time
+
 if __name__ == "__main__":
-    screenshot_path = "data/test/images/test24.png"
-    move, tracker, location1, location2 = predict_optimal_move(screenshot_path)
-    centreX1 = (location1[0] + location1[2])//2
-    centreY1 = (location1[1] + location1[3]) // 2
-    centreX2 = (location2[0] + location2[2])//2
-    centreY2 = (location2[1] + location2[3]) // 2
-    screen_width, screen_height = pyautogui.size()
-    x_shift = 0.3 * screen_width
-    centreX1 += x_shift
-    centreX2 += x_shift
-    pyautogui.moveTo(centreX1, centreY1, duration=0.2)
-    pyautogui.dragTo(centreX2, centreY2, duration=0.2, button='left')
-    print("Move: ", move)
-    print("Tracker1: ", tracker)
+    run_move_selection_experiment(True)
 
     """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
