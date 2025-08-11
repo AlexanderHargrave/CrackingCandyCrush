@@ -713,6 +713,7 @@ def detect_moves(image_path):
     result = reader.readtext(thresh, detail=0, paragraph=False, allowlist='0123456789')
     if not result:
         # Attempt with pytesseract if EasyOCR fails
+        print("Using pytesseract instead of EasyOCR: moves")
         result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
         if not result:
             return 0
@@ -740,6 +741,7 @@ def get_objective_numbers(image_path, objective_detections):
 
         result = reader.readtext(thresh, detail=0, paragraph=False, allowlist='0123456789')
         if not result:
+            print("Using pytesseract instead of EasyOCR: objectives")
             result = pytesseract.image_to_string(thresh, config='--psm 6 -c tessedit_char_whitelist=0123456789').split()
             if not result:
                 result = ['0']
@@ -776,8 +778,8 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
 
     return models_list, class_names
 def run_move_selection_experiment(skip_existing_results=True):
-    output_csv_path = "simulation_results_depth.csv"
-    graph_dir = "graphs/move_selection/depth_comparison"
+    output_csv_path = "simulation_results.csv"
+    graph_dir = "graphs/move_selection"
     os.makedirs(graph_dir, exist_ok=True)
 
     if skip_existing_results and os.path.exists(output_csv_path):
@@ -786,21 +788,21 @@ def run_move_selection_experiment(skip_existing_results=True):
     else:
         print("Running full simulation for move strategies.")
 
-        #strategies = {
-            #"depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
-            #"monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
-            #"mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
-            #"expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
-            #"softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
-        #}
         strategies = {
-            "depth2": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
+            "depth": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
             "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
-            "depth3": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=3, **kwargs),
+            "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
+            "expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
+            "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
         }
+        #strategies = {
+            #"depth2": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
+            #"monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
+            #"depth3": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=3, **kwargs),
+        #}
 
         screenshot_names = ["test1", "test2", "test3", "test5", "test6", "test7", "test8", "test9", "test11", "test12", "test14", "test15", "test16", "test24", "test26"]
-        num_runs = 5
+        num_runs = 20
         results = []
 
         yolo_model_path = "runs/detect/train7/weights/best.pt"

@@ -111,7 +111,7 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3
     expected_moves_sorted = sorted(expected_moves)
 
     if predicted_moves_fmt_sorted != expected_moves_sorted:
-        print(f"❌ Move mismatch:")
+        print(f"Move mismatch:")
         print('"possible_moves": [')
         for i, m in enumerate(predicted_moves_fmt_sorted):
             line = f"  {m}"
@@ -127,7 +127,7 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3
     
 
     
-    print(f"✅ {os.path.basename(image_path)} passed.")
+    print(f"{os.path.basename(image_path)} passed.")
 
 def run_all_tests():
     test_files = [f for f in os.listdir(test_image_dir) if f.endswith(".png") or f.endswith(".jpg")]
@@ -141,7 +141,7 @@ def run_all_tests():
         try:
             assert_test(test_img_path, test_label_path)
         except AssertionError as e:
-            print(f"❌ {test_img} failed: {e}")
+            print(f"{test_img} failed: {e}")
 
 if __name__ == "__main__":
     print("Running tests...")

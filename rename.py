@@ -33,6 +33,6 @@ for file_name in sorted(os.listdir(labels_dir)):
         with open(file_path, "w") as f:
             f.write("\n".join(new_lines) + "\n")
 
-        print(f"✔ Remapped: {file_name}")
+        print(f" Remapped: {file_name}")
     else:
-        print(f"⏭ Skipped:  {file_name}")
+        print(f"Skipped:  {file_name}")
