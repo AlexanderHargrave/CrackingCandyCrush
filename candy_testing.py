@@ -13,10 +13,10 @@ from candy_vision_train import (
 )
 from candy_simulation import find_possible_moves
 yolo_model_path = "runs/detect/train7/weights/best.pt"
-sample_eval_size = 1
+sample_eval_size = 1000
 num_epochs = 50
-model_names = ["resnet34"]
-short_model_names =  ["resnet18"]
+model_names = ["resnet18", "resnet34", "resnet50", "efficientnet_b0", "efficientnet_b3"]
+short_model_names =  ["resnet18", "resnet34", "efficientnet_b0"]
 test_image_dir = "data/test/images"
 label_dir = "data/test/labels"
 
@@ -111,7 +111,7 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3
     expected_moves_sorted = sorted(expected_moves)
 
     if predicted_moves_fmt_sorted != expected_moves_sorted:
-        print(f"Move mismatch:")
+        print(f"❌ Move mismatch:")
         print('"possible_moves": [')
         for i, m in enumerate(predicted_moves_fmt_sorted):
             line = f"  {m}"
@@ -127,7 +127,7 @@ def assert_test(image_path, label_path, range1 = range1, range2 = range2, range3
     
 
     
-    print(f"{os.path.basename(image_path)} passed.")
+    print(f"✅ {os.path.basename(image_path)} passed.")
 
 def run_all_tests():
     test_files = [f for f in os.listdir(test_image_dir) if f.endswith(".png") or f.endswith(".jpg")]
@@ -141,7 +141,7 @@ def run_all_tests():
         try:
             assert_test(test_img_path, test_label_path)
         except AssertionError as e:
-            print(f"{test_img} failed: {e}")
+            print(f"❌ {test_img} failed: {e}")
 
 if __name__ == "__main__":
     print("Running tests...")

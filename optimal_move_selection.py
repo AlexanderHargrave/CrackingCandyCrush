@@ -4,7 +4,7 @@ from collections import Counter, defaultdict
 from candy_simulation import ObjectivesTracker
 from candy_simulation import find_possible_moves, apply_move, merge_jelly_to_grid, reshuffle_candies
 import numpy as np
-import heapq
+import time
 def evaluate_board(tracker_summary, objective_targets):
     """
     Weighted evaluation score for the board based on objectives, urgency, and other blockers.
@@ -125,25 +125,35 @@ def monte_carlo_best_move(grid, jelly_grid, objective_targets, simulations_per_m
             best_move = move[:2]
             best_tracker_summary = tracker_summary
     return best_move, best_score, best_tracker_summary
+def random_move_selection(candy_grid, jelly_grid, objective_targets, **kwargs):
+    """
+    Select a random move from the list of possible moves.
+    
+    Returns:
+        (move, score, tracker_summary)
+    """
+    possible_moves = find_possible_moves(candy_grid)
+    if not possible_moves:
+        return None, 0, {}
+    
+    move = random.choice(possible_moves)
+    _, _, tracker_summary = simulate_with_tracker(candy_grid, jelly_grid, move, objective_targets)
+    # We give it a dummy score (0) since it's random
+    return move[:2], 0, tracker_summary
+
 def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_fn, max_steps=30, **strategy_kwargs):
     """
-    Simulate a level by selecting the best move with a given strategy until objectives are complete or max steps reached.
+    Simulate a level with a given strategy until objectives are complete or max steps reached.
     
-    Args:
-        candy_grid: Initial candy grid.
-        jelly_grid: Initial jelly grid.
-        objective_targets: Dict of objectives and their required counts.
-        strategy_fn: A function that returns (best_move, score, tracker_summary)
-        max_steps: Max number of moves allowed before stopping.
-        **strategy_kwargs: Additional arguments passed to strategy_fn.
-
     Returns:
-        steps_taken, final_tracker_summary, success (bool)
+        steps_taken, final_tracker_summary, success (bool), final_grid, final_jelly, score, total_time, avg_time_per_move
     """
     current_grid = copy.deepcopy(candy_grid)
     current_jelly = copy.deepcopy(jelly_grid)
     tracker = ObjectivesTracker()
     steps_taken = 0
+    total_time = 0.0
+    
     while steps_taken < max_steps:
         consecutive_shuffles = 0
         possible_moves = find_possible_moves(current_grid)
@@ -153,11 +163,13 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
                 break
             current_grid = reshuffle_candies(current_grid)
             consecutive_shuffles += 1
-            
             possible_moves = find_possible_moves(current_grid)
 
-        
+        start_time = time.perf_counter()
         move, score, tracker_summary = strategy_fn(current_grid, current_jelly, objective_targets, **strategy_kwargs)
+        end_time = time.perf_counter()
+        
+        total_time += (end_time - start_time)
         
         if not move:
             print("Strategy failed to find a move.")
@@ -177,9 +189,11 @@ def simulate_to_completion(candy_grid, jelly_grid, objective_targets, strategy_f
                 break
 
         if complete:
-            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, score
+            avg_time = total_time / steps_taken if steps_taken > 0 else 0
+            return steps_taken, tracker.get_summary(), True, current_grid, current_jelly, score, total_time, avg_time
 
-    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, score
+    avg_time = total_time / steps_taken if steps_taken > 0 else 0
+    return steps_taken, tracker.get_summary(), False, current_grid, current_jelly, score, total_time, avg_time
 def simulate_to_completion_with_ensemble(candy_grid, jelly_grid, objective_targets, strategies, max_steps=30, **kwargs):
     """
     Simulate a level using ensemble strategy. Track which strategies agree with ensemble's chosen move (excluding ties).

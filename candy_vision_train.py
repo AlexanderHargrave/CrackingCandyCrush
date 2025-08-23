@@ -26,7 +26,7 @@ import cv2
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 import easyocr
 from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker, infer_hidden_jelly_layers
-from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax, simulate_to_completion_with_ensemble, ensemble_strategy
+from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax, simulate_to_completion_with_ensemble, ensemble_strategy, random_move_selection
 from hybrid_mcts import hybrid_mcts
 reader = easyocr.Reader(['en'], gpu=False) 
 # Config
@@ -793,7 +793,8 @@ def run_move_selection_experiment(skip_existing_results=True):
             "monte_carlo": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=monte_carlo_best_move, simulations_per_move=3, **kwargs),
             "mcts": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=hybrid_mcts, max_depth=2, simulations_per_move=3, **kwargs),
             "expectimax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=expectimax, **kwargs),
-            "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs)
+            "softmax": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=heuristics_softmax_best_move, **kwargs),
+            "random": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=random_move_selection, **kwargs),
         }
         #strategies = {
             #"depth2": lambda *args, **kwargs: simulate_to_completion(*args, strategy_fn=depth_based_simulation, depth=2, **kwargs),
@@ -810,8 +811,10 @@ def run_move_selection_experiment(skip_existing_results=True):
         sample_eval_size = 1
         num_epochs = 50
 
-        model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
-        short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+        #model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
+        #short_model_names = ["efficientnet_b0", "resnet18", "resnet34"]
+        model_names = ["resnet34"]
+        short_model_names = ["resnet18"]
 
         candy_models, candy_class_names = load_models_for_task("candy", data_dir, model_names, num_epochs, "candy", sample_eval_size)
         objective_models, objective_class_names = load_models_for_task("objective", "objectives", short_model_names, num_epochs, "objective", sample_eval_size)
@@ -843,7 +846,7 @@ def run_move_selection_experiment(skip_existing_results=True):
                 strategy_first_moves = {}
                 for strategy_name, strategy_fn in strategies.items():
                     try:
-                        steps_taken, summary, completed, _, _, _ = strategy_fn(
+                        steps_taken, summary, completed, _, _, _, total_time, avg_time = strategy_fn(
                             candy_grid=candy_grid,
                             jelly_grid=jelly_grid,
                             objective_targets=objective_targets,
@@ -854,7 +857,9 @@ def run_move_selection_experiment(skip_existing_results=True):
                             "run": run_index,
                             "strategy": strategy_name,
                             "moves_taken": steps_taken,
-                            "completed": completed
+                            "completed": completed,
+                            "total_time": total_time,
+                            "avg_time_per_move": avg_time
                         })
                     except Exception as e:
                         results.append({
@@ -863,6 +868,8 @@ def run_move_selection_experiment(skip_existing_results=True):
                             "strategy": strategy_name,
                             "moves_taken": -1,
                             "completed": False,
+                            "total_time": -1,
+                            "avg_time_per_move": -1,
                             "error": str(e)
                         })
                         strategy_first_moves[strategy_name] = None
@@ -979,7 +986,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     print("\nStrategy Comparison (Outperformance)")
     print(summary)
     
-    df_results = df[df["moves_taken"].notnull()]  # real runs
+    df_results = df[(df["moves_taken"].notnull()) & (df["moves_taken"] > 0) & (df["avg_time_per_move"] >= 0)]
     df_agreement = df[df["ensemble_agreement_count"].notnull()]  # agreement-only
 
     # === Agreement Rate Calculation ===
@@ -990,11 +997,20 @@ def run_move_selection_experiment(skip_existing_results=True):
         )
         .reset_index()
     )
+    timing_summary = df_results.groupby("strategy").agg(
+        avg_time_per_move=("avg_time_per_move", "mean"),
+        median_time_per_move=("avg_time_per_move", "median"),
+        runs=("avg_time_per_move", "count")
+    ).reset_index()
 
+    timing_summary["avg_time_per_move"] = timing_summary["avg_time_per_move"].round(4)
+    timing_summary["median_time_per_move"] = timing_summary["median_time_per_move"].round(4)
+
+    
     agreement_summary["agreement_rate"] = (
         100 * agreement_summary["total_agreements"] / agreement_summary["total_considered"]
     ).round(2)
-
+    agreement_summary = agreement_summary[agreement_summary["strategy"] != "random"]
     completed_df = df_results[df_results["completed"] == True]
 
     avg_moves_summary = completed_df.groupby("strategy").agg(
@@ -1011,6 +1027,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     completion_summary["completion_rate"] = (completion_summary["completion_rate"] * 100).round(2)
 
     summary = pd.merge(avg_moves_summary, completion_summary, on="strategy", how="outer")
+    # summary
 
     print("\nOverall Strategy Comparison")
     print(summary.sort_values(by="completion_rate", ascending=False))
@@ -1019,7 +1036,8 @@ def run_move_selection_experiment(skip_existing_results=True):
         print("No agreement rate data found.")
     else:
         print(agreement_summary.sort_values("agreement_rate", ascending=False))
-
+    print("\nAverage Time per Move (seconds) by Strategy")
+    print(timing_summary.sort_values("avg_time_per_move"))
     # location for saving plots
     move_plot_path = os.path.join(graph_dir, "avg_moves_per_strategy.png")
     completion_plot_path = os.path.join(graph_dir, "completion_rate_per_strategy.png")
@@ -1170,7 +1188,7 @@ if __name__ == "__main__":
     """
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
-    screenshot_path = "data/test/images/test24.png"
+    screenshot_path = "data/test/images/test1.png"
     sample_eval_size = 1
 
     model_names = ["efficientnet_b0", "efficientnet_b3", "resnet18", "resnet34", "resnet50"]
@@ -1328,8 +1346,9 @@ if __name__ == "__main__":
     for i, row in enumerate(jelly_grid6):
         print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
 
-    run_move_selection_experiment(skip_existing_results=True)
+    #run_move_selection_experiment(skip_existing_results=True)
     """
+    
 
     
 
