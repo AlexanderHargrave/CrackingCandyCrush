@@ -17,7 +17,7 @@ from torchvision.models import (
     resnet34, ResNet34_Weights,
     resnet50, ResNet50_Weights,
 )
-from collections import Counter
+from collections import Counter, defaultdict
 from torch.utils.data import random_split
 import random
 import matplotlib.pyplot as plt
@@ -28,6 +28,8 @@ import easyocr
 from candy_simulation import find_possible_moves, extract_jelly_grid, find_all_matches, apply_move, clear_matches, update_board, merge_jelly_to_grid, ObjectivesTracker, infer_hidden_jelly_layers
 from optimal_move_selection import depth_based_simulation, monte_carlo_best_move, simulate_to_completion, heuristics_softmax_best_move, expectimax, simulate_to_completion_with_ensemble, ensemble_strategy, random_move_selection
 from hybrid_mcts import hybrid_mcts
+import time
+import csv
 reader = easyocr.Reader(['en'], gpu=False) 
 # Config
 IMG_SIZE = 64
@@ -452,8 +454,9 @@ def detect_jelly_layer(crop_pil, range1, range2,  range3, range4, thresh1=30, th
                     elif count2 > count1:
                         return "two layer jelly"
             return "no jelly"
-def classify_candies(image_path, detections, models, class_names, update = False, check_candy = True, range1 = None, range2 = None, range3 = None, range4 = None):
+def classify_candies(image_path, detections, models, class_names, update = False, check_candy = True, range1 = None, range2 = None, range3 = None, range4 = None, category = None):
     image = Image.open(image_path).convert("RGB")
+    csv_log_path="classification_times.csv"
     predictions = []
     max_per_class = 50 
     for box, _ in detections:
@@ -462,11 +465,19 @@ def classify_candies(image_path, detections, models, class_names, update = False
         crop_transform = candy_eval_transform(crop).unsqueeze(0).to(DEVICE)
         model_votes = []
         for model in models:
+            # get name of model
+            model_name = getattr(model, '_model_name', model.__class__.__name__)
+            start_time = time.perf_counter()
             model.eval()
             with torch.no_grad():
                 output = model(crop_transform)
                 pred = torch.argmax(output, 1).item()
                 model_votes.append(pred)
+            end_time = time.perf_counter()
+            classification_time = end_time - start_time
+            with open(csv_log_path, "a") as f:
+                writer = csv.writer(f)
+                writer.writerow([category, model_name, classification_time])
         modal_pred = Counter(model_votes).most_common(1)[0][0]
         result = class_names[modal_pred]
         if check_candy:
@@ -769,6 +780,7 @@ def load_models_for_task(task_name, data_dir, model_names, num_epochs, target=No
         model, _ = load_or_train_model(data_dir, model_path=model_path, num_epochs=num_epochs,
                                        model_name=model_name, target=target)
         model.to(DEVICE)
+        model._model_name = model_name
         # torch.save(model.state_dict(), model_path)
         model.eval()
         models_list.append(model)
@@ -986,7 +998,7 @@ def run_move_selection_experiment(skip_existing_results=True):
     print("\nStrategy Comparison (Outperformance)")
     print(summary)
     
-    df_results = df[(df["moves_taken"].notnull()) & (df["moves_taken"] > 0) & (df["avg_time_per_move"] >= 0)]
+    df_results = df[(df["moves_taken"].notnull()) & (df["moves_taken"] > 0) & (df["avg_time_per_move"] != -1)]
     df_agreement = df[df["ensemble_agreement_count"].notnull()]  # agreement-only
 
     # === Agreement Rate Calculation ===
@@ -1183,9 +1195,9 @@ def predict_optimal_move(screenshot_path, quick=True):
     return best_move, tracker, location1[0], location2[0]
 
 if __name__ == "__main__":
-    run_move_selection_experiment(True)
+    # run_move_selection_experiment(True)
 
-    """
+    
     yolo_model_path = "runs/detect/train7/weights/best.pt"
     data_dir = "candy_dataset"
     screenshot_path = "data/test/images/test1.png"
@@ -1230,12 +1242,35 @@ if __name__ == "__main__":
     range3 = extract_unique_colors("jelly_levels/marmalade")
     range4 = extract_unique_colors("jelly_levels/zero_jelly")
 
+    #all_screenshots = [f"data/test/images/{name}.png" for name in ["test1", "test2", "test3", "test5", "test6", "test7", "test8", "test9", "test11", "test12", "test14", "test15", "test16", "test24", "test26"]]
+    #for screenshot_path in all_screenshots:
+        #candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3 = range3, range4 = range4, category="candy")
+        #gap_classified = [(box, "gap") for box, _ in gap_box]
+        #objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False, category="objective")
+        #loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False, category="loader")
+    df = pd.read_csv("classification_times.csv")
 
-    candy_classified = classify_candies(screenshot_path, candies_box, candy_models, candy_class_names, update=False, range1=range1, range2=range2, range3 = range3, range4 = range4)
-    gap_classified = [(box, "gap") for box, _ in gap_box]
-    objective_classified = classify_candies(screenshot_path, objective_box, objective_models, objective_class_names, update=False, check_candy=False)
-    loader_classified = classify_candies(screenshot_path, loader_box, loader_models, loader_class_names, update=False, check_candy=False)
+    # Ensure times are floats
+    df["time_spent"] = df["time_spent"].astype(float)
 
+    # --- Table 1: Candy ---
+    candy_table = df[df["task"] == "candy"].groupby("model_name")["time_spent"].mean().reset_index()
+    candy_table = candy_table.rename(columns={"time_spent": "avg_time"})
+    print("Candy Classification Times:")
+    print(candy_table, "\n")
+
+    # --- Table 2: Objective ---
+    objective_table = df[df["task"] == "objective"].groupby("model_name")["time_spent"].mean().reset_index()
+    objective_table = objective_table.rename(columns={"time_spent": "avg_time"})
+    print("Objective Classification Times:")
+    print(objective_table, "\n")
+
+    # --- Table 3: Loader ---
+    loader_table = df[df["task"] == "loader"].groupby("model_name")["time_spent"].mean().reset_index()
+    loader_table = loader_table.rename(columns={"time_spent": "avg_time"})
+    print("Loader Classification Times:")
+    print(loader_table, "\n")
+    """
     objective_numbers = get_objective_numbers(screenshot_path, objective_classified)
 
     print("\nObjectives detected:")
@@ -1297,57 +1332,10 @@ if __name__ == "__main__":
     print(f"[Softmax Heuristic] Move: {best_softmax_move}, Estimated Score: {softmax_score:.2f}, Tracker: {softmax_tracker}")
     print(f"[Ensemble Strategy] Move: {best_ensemble_moves}, Estimated Score: {ensemble_score:.2f}, Tracker: {ensemble_tracker}")
     
-    # 3. Run Depth-based Simulation
-    steps_taken_depth, depth_tracker, completion, candy_grid1, jelly_grid1, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, depth_based_simulation, depth = 2, max_steps = moves_left)
-    print(f"\nDepth-based Simulation Steps: {steps_taken_depth}")
-    print(f"Depth Tracker: {depth_tracker}")
-    print(f"Completion Status: {completion}")
-    print(f"Score: {score}")
-    for i, row in enumerate(candy_grid1):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid1):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    # 4. Run Monte Carlo Simulation
-    steps_taken_monte_carlo, monte_carlo_tracker, completion, candy_grid2, jelly_grid2, score = simulate_to_completion(candy_grid, jelly_grid, objective_targets, monte_carlo_best_move,simulations_per_move = 3, max_steps = moves_left)
-    print(f"\nMonte Carlo Simulation Steps: {steps_taken_monte_carlo}")
-    print(f"Monte Carlo Tracker: {monte_carlo_tracker}")
-    print(f"Completion Status: {completion}")
-    print(f"Score: {score}")
-    for i, row in enumerate(candy_grid2):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid2):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    # 5. Run Hybrid MCTS Simulation
-    steps_taken_mcts, mcts_tracker, completion, candy_grid3, jelly_grid3, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = hybrid_mcts, max_depth=3, simulations_per_move=3, max_steps = moves_left)
-    print(f"\nHybrid MCTS Simulation Steps: {steps_taken_mcts}")    
-    print(f"Hybrid MCTS Tracker: {mcts_tracker}")
-    print(f"Completion Status: {completion}")
-    print(f"Score: {score}")
-    for i, row in enumerate(candy_grid3):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid3):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    steps_taken_expectimax, expectimax_tracker, completion, candy_grid5, jelly_grid5, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = expectimax, max_steps = moves_left)
-    print(f"\nExpectimax Simulation Steps: {steps_taken_expectimax}")
-    print(f"Expectimax Tracker: {expectimax_tracker}")
-    print(f"Completion Status: {completion}")
-    print(f"Score: {score}")
-    for i, row in enumerate(candy_grid5):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid5):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-    steps_taken_softmax, softmax_tracker, completion, candy_grid6, jelly_grid6, score = simulate_to_completion(candy_grid = candy_grid, jelly_grid = jelly_grid, objective_targets = objective_targets, strategy_fn = heuristics_softmax_best_move, max_steps = moves_left)
-    print(f"\nSoftmax Heuristic Simulation Steps: {steps_taken_softmax}")
-    print(f"Softmax Heuristic Tracker: {softmax_tracker}")
-    print(f"Completion Status: {completion}")
-    print(f"Score: {score}")
-    for i, row in enumerate(candy_grid6):
-        print(f"Row {i + 1}: {[label for _, label in row]}")
-    for i, row in enumerate(jelly_grid6):
-        print(f"Row {i + 1}: {[jelly_level for jelly_level in row]}")
-
-    #run_move_selection_experiment(skip_existing_results=True)
+    
     """
+    run_move_selection_experiment(skip_existing_results=True)
+    
     
 
     
