@@ -1,4 +1,5 @@
 # candy_simulation.py
+# Github copilot was used to help write, comment and debug parts of this file
 import random
 import re
 from collections import defaultdict, deque

@@ -1,3 +1,4 @@
+# Github copilot was used to help write, comment and debug parts of this file
 import os
 import torch
 import torch.nn as nn

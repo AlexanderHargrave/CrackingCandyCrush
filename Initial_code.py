@@ -1,3 +1,4 @@
+# Initial attempts, early prototype writte by chatGPT and improved and expanded by me.
 import pyautogui
 import keyboard
 from PIL import Image
